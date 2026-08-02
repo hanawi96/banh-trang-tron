@@ -22,7 +22,7 @@ const orderMenuEl = $("order-menu");
 const orderCartLinesEl = $("order-cart-lines");
 const editOrderMenuEl = $("edit-order-menu");
 
-const PRODUCT_CACHE_KEY = "bt_products_v2";
+const PRODUCT_CACHE_KEY = "bt_products_v3";
 const ORDERS_CACHE_KEY = "bt_orders_board_v1";
 
 /** @type {Map<string, number>} */
@@ -92,6 +92,21 @@ function escapeHtml(s) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/** Viết hoa chữ cái đầu mỗi từ — hiển thị / lưu tên khách */
+function formatCustomerName(s) {
+  return String(s || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => {
+      const first = word.charAt(0).toLocaleUpperCase("vi-VN");
+      const rest = word.slice(1).toLocaleLowerCase("vi-VN");
+      return `${first}${rest}`;
+    })
+    .join(" ");
 }
 
 function imagesPath(key) {
@@ -458,7 +473,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
       <div class="product-body">
         <h3>${escapeHtml(p.name)}</h3>
         <p class="price">Nhỏ ${vnd.format(p.price)} · To ${vnd.format(p.price_large ?? p.price)}</p>
-        <p class="sold">Giao hôm nay ${sold}</p>
+        <p class="sold">${sold} lượt bán</p>
       </div>
     `;
     return row;
@@ -468,7 +483,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
     <div class="product-body">
       <h3>${escapeHtml(p.name)}</h3>
       <p class="price" data-price>${vnd.format(unit)}</p>
-      <p class="sold">Giao hôm nay ${sold}</p>
+      <p class="sold">${sold} lượt bán</p>
     </div>
     <div class="product-controls">
       <div class="product-pick-row">
@@ -490,11 +505,23 @@ function buildProductCard(p, { manage, sold = 0 }) {
 
 function renderProductList(root, { manage }) {
   if (!root) return;
-  const soldMap = soldTodayByProductId();
+  // API đã sort sold_count DESC; client giữ thứ tự đó (và khi cache cũ thiếu field)
+  const list = [...products].sort((a, b) => {
+    const diff =
+      (Math.max(0, Number(b.sold_count) || 0)) -
+      (Math.max(0, Number(a.sold_count) || 0));
+    if (diff !== 0) return diff;
+    const so = (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
+    if (so !== 0) return so;
+    return String(a.name || "").localeCompare(String(b.name || ""), "vi");
+  });
   const frag = document.createDocumentFragment();
-  for (const p of products) {
+  for (const p of list) {
     frag.appendChild(
-      buildProductCard(p, { manage, sold: soldMap.get(p.id) || 0 }),
+      buildProductCard(p, {
+        manage,
+        sold: Math.max(0, Math.floor(Number(p.sold_count) || 0)),
+      }),
     );
   }
   root.replaceChildren(frag);
@@ -724,28 +751,6 @@ function setProducts(list, { render = true, cache = true } = {}) {
   if (ordersCache.length) renderOrders(ordersCache);
 }
 
-/** Sold for delivery-today — from board cache filtered by today's YMD */
-function soldTodayByProductId() {
-  const today = vnYmd();
-  const map = new Map();
-  for (const o of ordersCache) {
-    const d = String(o.delivery_date || "");
-    if (d && d !== today) continue;
-    if (!d) {
-      // legacy: only count if created today
-      const createdDay = vnYmd(Number(o.created_at) || Date.now());
-      if (createdDay !== today) continue;
-    }
-    for (const item of o.items || []) {
-      const id = String(item.id || "");
-      const qty = Math.floor(Number(item.qty)) || 0;
-      if (!id || qty < 1) continue;
-      map.set(id, (map.get(id) || 0) + qty);
-    }
-  }
-  return map;
-}
-
 /** Prefer current product catalog image so order thumbs follow avatar updates */
 function resolveItemImage(item) {
   const p = products.find((x) => x.id === item.id);
@@ -795,7 +800,7 @@ function updateBulkBar() {
 
 /** A6 slip HTML for one order — print via browser → Save as PDF */
 function buildOrderSlipHtml(order, index, total) {
-  const customer = (order.customer || "").trim() || "Khách";
+  const customer = formatCustomerName(order.customer) || "Khách";
   const phone = (order.phone || "").trim();
   const note = (order.note || "").trim();
   const slot = order.delivery_slot === "chieu" ? "chieu" : order.delivery_slot === "trua" ? "trua" : "";
@@ -1020,7 +1025,8 @@ function renderOrders(orders) {
     const status = normalizeStatus(o.status);
     el.className = `order order-${status}`;
     el.dataset.orderId = o.id;
-    const receiver = [o.customer, o.phone].filter(Boolean).join(" · ");
+    const customerName = formatCustomerName(o.customer);
+    const receiver = [customerName, o.phone].filter(Boolean).join(" · ");
     const orderCount = Math.max(0, Math.floor(Number(o.order_count) || 0));
     const note = (o.note || "").trim();
     const itemsHtml = (o.items || [])
@@ -1531,7 +1537,7 @@ function openEditOrderModal(order) {
     };
   });
   $("edit-order-title").textContent = "Sửa đơn hàng";
-  $("edit-order-customer").value = order.customer || "";
+  $("edit-order-customer").value = formatCustomerName(order.customer);
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
   renderDeliveryDateOptions(
@@ -2005,7 +2011,7 @@ $("edit-order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!editingOrder) return;
   const nameEl = $("edit-order-customer");
-  const customer = nameEl?.value.trim() || "";
+  const customer = formatCustomerName(nameEl?.value || "");
   if (!customer) {
     showComposeIssue(nameEl, "Nhập tên khách hàng");
     return;
@@ -2150,7 +2156,7 @@ $("customer-name")?.addEventListener("input", () => {
 $("order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const nameEl = $("customer-name");
-  const customer = nameEl?.value.trim() || "";
+  const customer = formatCustomerName(nameEl?.value || "");
   if (!customer) {
     showComposeIssue(nameEl, "Nhập tên khách hàng");
     return;

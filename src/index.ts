@@ -13,7 +13,12 @@ import {
   upcomingDeliveryYmdRange,
   type OrderItem,
 } from "./db";
-import { getProduct, listProducts } from "./products";
+import {
+  applySoldDeltas,
+  getProduct,
+  listProducts,
+  qtyByProductId,
+} from "./products";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -37,7 +42,6 @@ function extFromType(type: string): string {
 app.get("/api/products", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
-  // Sold counts are derived client-side from today's orders — keep this endpoint light
   const products = await listProducts(db);
   return c.json({ products });
 });
@@ -165,6 +169,7 @@ app.put("/api/products/:id", async (c) => {
       cost_large,
       image,
       sort_order: existing.sort_order,
+      sold_count: existing.sold_count,
       updated_at,
     },
   });
@@ -340,6 +345,7 @@ app.post("/api/orders", async (c) => {
       created_at,
     ],
   });
+  await applySoldDeltas(db, qtyByProductId(items));
 
   return c.json(
     {
@@ -428,7 +434,7 @@ app.put("/api/orders/:id", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const existing = await db.execute({
-    sql: `SELECT id, delivery_date FROM orders WHERE id = ? LIMIT 1`,
+    sql: `SELECT id, delivery_date, items_json FROM orders WHERE id = ? LIMIT 1`,
     args: [id],
   });
   if (!existing.rows.length) {
@@ -441,6 +447,20 @@ app.put("/api/orders/:id", async (c) => {
     parseDeliveryDate(body.delivery_date, nowMs(), prevDate) ||
     prevDate ||
     defaultDeliveryYmd();
+
+  let oldItems: OrderItem[] = [];
+  try {
+    oldItems = JSON.parse(String(existing.rows[0]?.items_json || "[]")) as OrderItem[];
+  } catch {
+    oldItems = [];
+  }
+  const deltas = new Map<string, number>();
+  for (const [pid, qty] of qtyByProductId(oldItems)) {
+    deltas.set(pid, (deltas.get(pid) || 0) - qty);
+  }
+  for (const [pid, qty] of qtyByProductId(items)) {
+    deltas.set(pid, (deltas.get(pid) || 0) + qty);
+  }
 
   await db.execute({
     sql: `UPDATE orders
@@ -457,6 +477,7 @@ app.put("/api/orders/:id", async (c) => {
       id,
     ],
   });
+  await applySoldDeltas(db, deltas);
 
   return c.json({
     ok: true,
@@ -521,13 +542,28 @@ app.delete("/api/orders/:id", async (c) => {
   const id = c.req.param("id");
   const db = getDb(c.env);
   await ensureSchema(db);
-  const result = await db.execute({
+  const existing = await db.execute({
+    sql: `SELECT items_json FROM orders WHERE id = ? LIMIT 1`,
+    args: [id],
+  });
+  if (!existing.rows.length) {
+    return c.json({ error: "Không tìm thấy đơn" }, 404);
+  }
+  let oldItems: OrderItem[] = [];
+  try {
+    oldItems = JSON.parse(String(existing.rows[0]?.items_json || "[]")) as OrderItem[];
+  } catch {
+    oldItems = [];
+  }
+  const deltas = new Map<string, number>();
+  for (const [pid, qty] of qtyByProductId(oldItems)) {
+    deltas.set(pid, -(qty));
+  }
+  await db.execute({
     sql: `DELETE FROM orders WHERE id = ?`,
     args: [id],
   });
-  if (result.rowsAffected === 0) {
-    return c.json({ error: "Không tìm thấy đơn" }, 404);
-  }
+  await applySoldDeltas(db, deltas);
   return c.json({ ok: true, id });
 });
 
@@ -543,10 +579,27 @@ app.post("/api/orders/delete-bulk", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const placeholders = ids.map(() => "?").join(", ");
+  const existing = await db.execute({
+    sql: `SELECT items_json FROM orders WHERE id IN (${placeholders})`,
+    args: ids,
+  });
+  const deltas = new Map<string, number>();
+  for (const row of existing.rows) {
+    let oldItems: OrderItem[] = [];
+    try {
+      oldItems = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
+    } catch {
+      oldItems = [];
+    }
+    for (const [pid, qty] of qtyByProductId(oldItems)) {
+      deltas.set(pid, (deltas.get(pid) || 0) - qty);
+    }
+  }
   await db.execute({
     sql: `DELETE FROM orders WHERE id IN (${placeholders})`,
     args: ids,
   });
+  await applySoldDeltas(db, deltas);
 
   return c.json({ ok: true, ids });
 });

@@ -37,6 +37,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
         cost_large INTEGER NOT NULL DEFAULT 0,
         image TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
+        sold_count INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       )`,
       `CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`,

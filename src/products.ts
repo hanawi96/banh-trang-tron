@@ -9,10 +9,46 @@ export type Product = {
   cost_large: number;
   image: string;
   sort_order: number;
+  /** Tổng số phần đã đặt (mọi đơn) — không phụ thuộc đã giao */
+  sold_count: number;
   updated_at: number;
 };
 
-const SEED: Omit<Product, "updated_at">[] = [
+/** Cộng qty theo product id từ dòng món */
+export function qtyByProductId(
+  items: { id?: string; qty?: number }[] | null | undefined,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!Array.isArray(items)) return map;
+  for (const item of items) {
+    const id = String(item?.id || "").slice(0, 64);
+    const qty = Math.floor(Number(item?.qty)) || 0;
+    if (!id || qty < 1) continue;
+    map.set(id, (map.get(id) || 0) + qty);
+  }
+  return map;
+}
+
+/** Áp delta sold_count (có thể âm). Không cho xuống dưới 0. */
+export async function applySoldDeltas(
+  db: Client,
+  deltas: Map<string, number>,
+): Promise<void> {
+  if (!deltas.size) return;
+  await ensureProducts(db);
+  for (const [id, delta] of deltas) {
+    const n = Math.trunc(Number(delta)) || 0;
+    if (!id || !n) continue;
+    await db.execute({
+      sql: `UPDATE products
+            SET sold_count = MAX(0, COALESCE(sold_count, 0) + ?)
+            WHERE id = ?`,
+      args: [n, id],
+    });
+  }
+}
+
+const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
   {
     id: "bt-tron",
     name: "Bánh tráng trộn",
@@ -82,6 +118,7 @@ export async function ensureProducts(db: Client): Promise<void> {
       cost_large INTEGER NOT NULL DEFAULT 0,
       image TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      sold_count INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     )
   `);
@@ -90,9 +127,35 @@ export async function ensureProducts(db: Client): Promise<void> {
     "cost INTEGER NOT NULL DEFAULT 0",
     "price_large INTEGER NOT NULL DEFAULT 0",
     "cost_large INTEGER NOT NULL DEFAULT 0",
+    "sold_count INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       await db.execute(`ALTER TABLE products ADD COLUMN ${col}`);
+      // Cột sold_count mới → backfill từ đơn hiện có
+      if (col.startsWith("sold_count")) {
+        const result = await db.execute(`SELECT items_json FROM orders`);
+        const totals = new Map<string, number>();
+        for (const row of result.rows) {
+          let items: { id?: string; qty?: number }[] = [];
+          try {
+            items = JSON.parse(String(row.items_json || "[]")) as {
+              id?: string;
+              qty?: number;
+            }[];
+          } catch {
+            items = [];
+          }
+          for (const [id, qty] of qtyByProductId(items)) {
+            totals.set(id, (totals.get(id) || 0) + qty);
+          }
+        }
+        for (const [id, n] of totals) {
+          await db.execute({
+            sql: `UPDATE products SET sold_count = ? WHERE id = ?`,
+            args: [n, id],
+          });
+        }
+      }
     } catch {
       // exists
     }
@@ -105,8 +168,8 @@ export async function ensureProducts(db: Client): Promise<void> {
     for (const p of SEED) {
       await db.execute({
         sql: `INSERT INTO products
-              (id, name, price, cost, price_large, cost_large, image, sort_order, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              (id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
         args: [
           p.id,
           p.name,
@@ -175,6 +238,7 @@ export function mapProduct(row: Record<string, unknown>): Product {
     cost_large: costLarge > 0 ? costLarge : Math.max(0, cost + 2000),
     image: String(row.image),
     sort_order: Number(row.sort_order ?? 0),
+    sold_count: Math.max(0, Math.floor(Number(row.sold_count ?? 0)) || 0),
     updated_at: Number(row.updated_at ?? 0),
   };
 }
@@ -182,9 +246,9 @@ export function mapProduct(row: Record<string, unknown>): Product {
 export async function listProducts(db: Client): Promise<Product[]> {
   await ensureProducts(db);
   const result = await db.execute(
-    `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, updated_at
+    `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at
      FROM products
-     ORDER BY sort_order ASC, name ASC`,
+     ORDER BY sold_count DESC, sort_order ASC, name ASC`,
   );
   return result.rows.map((row) => mapProduct(row as Record<string, unknown>));
 }
@@ -192,7 +256,7 @@ export async function listProducts(db: Client): Promise<Product[]> {
 export async function getProduct(db: Client, id: string): Promise<Product | null> {
   await ensureProducts(db);
   const result = await db.execute({
-    sql: `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, updated_at
+    sql: `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at
           FROM products WHERE id = ? LIMIT 1`,
     args: [id],
   });
