@@ -1,6 +1,5 @@
 const $ = (id) => document.getElementById(id);
 
-const loginEl = $("login");
 const appEl = $("app");
 const menuEl = $("menu");
 const ordersEl = $("orders");
@@ -107,14 +106,7 @@ function finishBoot() {
   document.documentElement.classList.remove("booting");
 }
 
-function showLogin() {
-  appEl.classList.add("hidden");
-  loginEl.classList.remove("hidden");
-  finishBoot();
-}
-
 function revealApp() {
-  loginEl.classList.add("hidden");
   appEl.classList.remove("hidden");
   setTab("products");
   finishBoot();
@@ -762,42 +754,9 @@ async function enterApp() {
   loadOrders().catch(() => {});
 }
 
-async function boot() {
-  try {
-    const me = await api("/api/me");
-    if (me.ok) await enterApp();
-    else showLogin();
-  } catch {
-    showLogin();
-  }
+function boot() {
+  return enterApp();
 }
-
-$("login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errorEl = $("login-error");
-  errorEl.textContent = "";
-  try {
-    await api("/api/login", {
-      method: "POST",
-      body: JSON.stringify({ password: $("password").value }),
-    });
-    await enterApp();
-  } catch (err) {
-    errorEl.textContent = err.message || "Sai mật khẩu";
-    finishBoot();
-  }
-});
-
-$("logout").addEventListener("click", async () => {
-  await api("/api/logout", { method: "POST" });
-  qtyMap.clear();
-  closeOrderModal();
-  closeEditOrderModal();
-  closeEditModal();
-  closeDeleteModal();
-  showLogin();
-  $("password").value = "";
-});
 
 document.querySelector(".tabbar").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-go]");

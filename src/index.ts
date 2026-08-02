@@ -1,12 +1,5 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
-import {
-  clearSessionCookie,
-  createSessionToken,
-  isAuthed,
-  requireAuth,
-  setSessionCookie,
-} from "./auth";
 import { ensureSchema, getDb, todayRangeVn, type OrderItem } from "./db";
 import { getProduct, listProducts } from "./products";
 
@@ -29,29 +22,7 @@ function extFromType(type: string): string {
   return "webp";
 }
 
-app.get("/api/me", async (c) => {
-  return c.json({ ok: await isAuthed(c) });
-});
-
-app.post("/api/login", async (c) => {
-  const body = await c.req.json<{ password?: string }>().catch(() => ({}));
-  const password = body.password ?? "";
-  if (!c.env.APP_PASSWORD || password !== c.env.APP_PASSWORD) {
-    return c.json({ error: "Sai mật khẩu" }, 401);
-  }
-  const token = await createSessionToken(c.env.APP_PASSWORD);
-  setSessionCookie(c, token);
-  return c.json({ ok: true });
-});
-
-app.post("/api/logout", async (c) => {
-  clearSessionCookie(c);
-  return c.json({ ok: true });
-});
-
 app.get("/api/products", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
   const db = getDb(c.env);
   await ensureSchema(db);
   const products = await listProducts(db);
@@ -59,9 +30,6 @@ app.get("/api/products", async (c) => {
 });
 
 app.put("/api/products/:id", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const id = c.req.param("id");
   const db = getDb(c.env);
   await ensureSchema(db);
@@ -146,9 +114,6 @@ app.put("/api/products/:id", async (c) => {
 });
 
 app.delete("/api/products/:id", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const id = c.req.param("id");
   const db = getDb(c.env);
   await ensureSchema(db);
@@ -168,9 +133,6 @@ app.delete("/api/products/:id", async (c) => {
 });
 
 app.get("/api/orders", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const db = getDb(c.env);
   await ensureSchema(db);
   const { start, end } = todayRangeVn();
@@ -205,9 +167,6 @@ app.get("/api/orders", async (c) => {
 });
 
 app.post("/api/orders", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const body = await c.req
     .json<{
       items?: OrderItem[];
@@ -288,9 +247,6 @@ function parseOrderItems(rawItems: OrderItem[]): OrderItem[] | Response {
 }
 
 app.put("/api/orders/:id", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const id = c.req.param("id");
   const body = await c.req
     .json<{
@@ -364,9 +320,6 @@ app.put("/api/orders/:id", async (c) => {
 });
 
 app.patch("/api/orders/:id/status", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const id = c.req.param("id");
   const body = await c.req.json<{ status?: string }>().catch(() => null);
   const status = body?.status === "done" ? "done" : body?.status === "pending" ? "pending" : "";
@@ -388,9 +341,6 @@ app.patch("/api/orders/:id/status", async (c) => {
 });
 
 app.post("/api/orders/status-bulk", async (c) => {
-  const denied = await requireAuth(c);
-  if (denied) return denied;
-
   const body = await c.req
     .json<{ ids?: string[]; status?: string }>()
     .catch(() => null);

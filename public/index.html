@@ -11,40 +11,12 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <section id="login" class="hidden">
-      <div class="login-card">
-        <p class="brand-mark">Bánh tráng trộn</p>
-        <h1>Ghi đơn nhanh</h1>
-        <p class="login-sub">Nhập mật khẩu để bắt đầu bán.</p>
-        <form id="login-form">
-          <label class="field">
-            <span>Mật khẩu</span>
-            <input
-              id="password"
-              type="password"
-              name="password"
-              autocomplete="current-password"
-              placeholder="••••••••"
-              required
-            />
-          </label>
-          <div class="error" id="login-error" aria-live="polite"></div>
-          <button class="btn primary full" type="submit">Vào làm việc</button>
-        </form>
-      </div>
-    </section>
-
     <main id="app" class="hidden">
       <header class="topbar">
         <div>
           <p class="brand-mark">Bánh tráng trộn</p>
           <h1 id="view-title">Sản phẩm</h1>
         </div>
-        <button type="button" class="icon-btn icon-btn-logout" id="logout" aria-label="Thoát" title="Thoát">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9" />
-          </svg>
-        </button>
       </header>
 
       <section id="tab-products" class="tab-panel" data-tab="products">

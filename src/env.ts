@@ -3,5 +3,4 @@ export type Env = {
   ASSETS: Fetcher;
   TURSO_URL: string;
   TURSO_AUTH_TOKEN: string;
-  APP_PASSWORD: string;
 };

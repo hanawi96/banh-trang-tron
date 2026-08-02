@@ -52,7 +52,6 @@ button {
 }
 
 /* Hide interactive UI until boot finishes — keep page bg stable */
-html.booting #login,
 html.booting #app,
 html.booting .modal,
 html.booting .toast,
@@ -69,45 +68,6 @@ html.booting .tabbar {
   color: var(--accent);
 }
 
-/* Login */
-#login {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-}
-
-.login-card {
-  width: min(100%, 400px);
-  padding: 28px 22px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: var(--shadow);
-}
-
-.login-card h1 {
-  margin: 8px 0 6px;
-  font-size: 1.8rem;
-  letter-spacing: -0.03em;
-}
-
-.login-sub {
-  margin: 0 0 22px;
-  color: var(--muted);
-}
-
-.login-card form {
-  display: grid;
-  gap: 12px;
-}
-
-.error {
-  color: var(--danger);
-  font-size: 0.9rem;
-  min-height: 1.2em;
-}
-
 /* App shell */
 #app {
   max-width: 720px;
@@ -117,10 +77,6 @@ html.booting .tabbar {
 }
 
 .topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -140,22 +96,6 @@ html.booting .tabbar {
   font-size: 0.85rem;
   cursor: pointer;
   flex-shrink: 0;
-}
-
-.icon-btn-logout {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: transparent;
-}
-
-.icon-btn-logout svg {
-  width: 20px;
-  height: 20px;
-  display: block;
 }
 
 .product-list {
