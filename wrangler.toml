@@ -5,6 +5,8 @@ compatibility_date = "2025-03-01"
 [[r2_buckets]]
 binding = "IMAGES"
 bucket_name = "banh-trang-tron"
+# Use remote R2 in wrangler dev so uploads match production (shared Turso keys).
+remote = true
 
 [assets]
 directory = "./public"
