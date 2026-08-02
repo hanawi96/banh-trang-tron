@@ -469,7 +469,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
           <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="to" class="${size === "to" ? "active" : ""}">To</button>
         </div>
       </div>
-      <button type="button" class="btn primary add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm vào đơn</span></button>
+      <button type="button" class="btn add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm vào đơn</span></button>
     </div>
   `;
   return row;
@@ -516,7 +516,7 @@ function renderLineRow(line, { prefix }) {
   el.innerHTML = `
     <div class="cart-line-info">
       <strong>${escapeHtml(line.name)}</strong>
-      <span>Size ${escapeHtml(sizeLabel(line.size))} · ${vnd.format(line.price)}</span>
+      <span class="cart-line-meta"><span class="order-size">${escapeHtml(sizeLabel(line.size))}</span><span class="cart-line-price">${vnd.format(line.price)}</span></span>
     </div>
     <div class="qty">
       <button type="button" data-${prefix}-minus="${escapeHtml(el.dataset.lineKey)}" aria-label="Giảm">−</button>
@@ -555,6 +555,7 @@ function renderCartLines() {
     updateComposeMeta();
     return;
   }
+  orderCartLinesEl.closest(".compose-section")?.classList.remove("is-invalid");
   const frag = document.createDocumentFragment();
   for (const line of cart) frag.appendChild(renderLineRow(line, { prefix: "cart" }));
   orderCartLinesEl.replaceChildren(frag);
@@ -607,12 +608,42 @@ function clearCart() {
   renderCartLines();
 }
 
+/** Toast + highlight + smooth scroll to the first invalid compose control */
+function showComposeIssue(el, message) {
+  toast(message);
+  const root = el?.closest?.(".modal") || orderModal;
+  root?.querySelectorAll(".is-invalid").forEach((n) => n.classList.remove("is-invalid"));
+  const wrap =
+    el instanceof HTMLElement
+      ? el.closest(".field") || el.closest(".compose-section") || el
+      : null;
+  wrap?.classList.add("is-invalid");
+  const focusEl =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      ? el
+      : wrap?.querySelector("input, textarea");
+  requestAnimationFrame(() => {
+    (wrap || el)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    focusEl?.focus?.({ preventScroll: true });
+  });
+}
+
+function clearComposeInvalid(root = orderModal) {
+  root?.querySelectorAll(".is-invalid").forEach((n) => n.classList.remove("is-invalid"));
+}
+
 function openCreateOrder() {
   cart = [];
+  clearComposeInvalid(orderModal);
   $("modal-title").textContent = "Thêm đơn hàng";
   $("customer-name").value = "";
   $("customer-phone").value = "";
   $("order-note").value = "";
+  renderDeliveryDateOptions(
+    "delivery-date-options",
+    "delivery_date",
+    defaultDeliveryYmd(),
+  );
   const trua = document.querySelector('input[name="delivery_slot"][value="trua"]');
   if (trua instanceof HTMLInputElement) trua.checked = true;
   renderCartLines();
@@ -723,9 +754,18 @@ function slotRank(slot) {
 
 function sortOrders(list) {
   return [...list].sort((a, b) => {
+    const da = String(a.delivery_date || "");
+    const db = String(b.delivery_date || "");
+    if (da !== db) {
+      if (!da) return 1;
+      if (!db) return -1;
+      return da < db ? -1 : 1;
+    }
+    // Trưa trước, chiều sau
     const slotDiff = slotRank(a.delivery_slot) - slotRank(b.delivery_slot);
     if (slotDiff !== 0) return slotDiff;
-    return Number(b.created_at) - Number(a.created_at);
+    // Trong cùng buổi: đơn sớm nhất lên trên
+    return Number(a.created_at) - Number(b.created_at);
   });
 }
 
@@ -766,28 +806,35 @@ function renderOrders(orders) {
     const status = normalizeStatus(o.status);
     el.className = `order order-${status}`;
     el.dataset.orderId = o.id;
-    const first = o.items[0];
-    const imgKey = first ? resolveItemImage(first) : "";
-    const imgSrc = imagesPath(imgKey);
     const receiver = [o.customer, o.phone].filter(Boolean).join(" · ");
+    const orderCount = Math.max(0, Math.floor(Number(o.order_count) || 0));
     const note = (o.note || "").trim();
     const itemsHtml = (o.items || [])
       .map((i, idx) => {
         const sizeText = sizeLabel(i.size);
-        return `<div class="order-item-block">
-          <p class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span>${
-            sizeText ? `<span class="order-size">${escapeHtml(sizeText)}</span>` : ""
-          }</p>
-          ${
-            idx === 0 && note
-              ? `<p class="order-meta-line"><span class="order-note">${escapeHtml(note)}</span></p>`
-              : ""
-          }
+        const imgSrc = imagesPath(resolveItemImage(i));
+        const thumb = imgSrc
+          ? `<img class="order-item-thumb" src="${imgSrc}" alt="" width="48" height="48" decoding="async" loading="lazy" />`
+          : `<div class="order-item-thumb order-item-thumb-empty" aria-hidden="true"></div>`;
+        return `<div class="order-item-row">
+          ${thumb}
+          <div class="order-item-block">
+            <p class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span>${
+              sizeText ? `<span class="order-size">${escapeHtml(sizeText)}</span>` : ""
+            }</p>
+            ${
+              idx === 0 && note
+                ? `<p class="order-meta-line"><span class="order-note">${escapeHtml(note)}</span></p>`
+                : ""
+            }
+          </div>
         </div>`;
       })
       .join("");
     const slot = o.delivery_slot === "chieu" ? "chieu" : o.delivery_slot === "trua" ? "trua" : "";
     const slotText = slotLabel(slot);
+    const dateText = deliveryDateLabel(o.delivery_date || "");
+    const whenText = [dateText, slotText].filter(Boolean).join(" · ");
     const statusText = status === "done" ? "Đã giao" : "Chưa giao";
     const checked = selectedOrderIds.has(o.id) ? "checked" : "";
     el.innerHTML = `
@@ -805,8 +852,8 @@ function renderOrders(orders) {
           <div class="order-badges">
             <span class="order-status order-status-${status}">${statusText}</span>
             ${
-              slotText
-                ? `<span class="order-slot order-slot-${slot}">${escapeHtml(slotText)}</span>`
+              whenText
+                ? `<span class="order-slot order-slot-${slot || "none"}">${escapeHtml(whenText)}</span>`
                 : ""
             }
           </div>
@@ -816,19 +863,16 @@ function renderOrders(orders) {
         </div>
       </header>
       <div class="order-main">
-        ${
-          imgSrc
-            ? `<img class="order-thumb" src="${imgSrc}" alt="" width="72" height="72" decoding="async" />`
-            : `<div class="order-thumb order-thumb-empty" aria-hidden="true"></div>`
-        }
-        <div class="order-info">
-          <p class="order-receiver">${
-            receiver
-              ? escapeHtml(receiver)
-              : `<span class="order-receiver-empty">Chưa có tên / SĐT</span>`
-          }</p>
-          ${itemsHtml}
-        </div>
+        <p class="order-receiver">${
+          receiver
+            ? `<span class="order-receiver-text">${escapeHtml(receiver)}</span>${
+                orderCount > 0
+                  ? `<span class="order-buy-count" title="Số lần đặt hàng">${orderCount} lần</span>`
+                  : ""
+              }`
+            : `<span class="order-receiver-empty">Chưa có tên / SĐT</span>`
+        }</p>
+        <div class="order-items">${itemsHtml}</div>
       </div>
       <div class="order-actions">
         <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}">
@@ -990,9 +1034,111 @@ function setTab(tab) {
   }
 }
 
+const VN_TZ = "Asia/Ho_Chi_Minh";
+const VN_WEEKDAY_LABEL = [
+  "Chủ nhật",
+  "Thứ 2",
+  "Thứ 3",
+  "Thứ 4",
+  "Thứ 5",
+  "Thứ 6",
+  "Thứ 7",
+];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function vnYmd(now = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: VN_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(now));
+}
+
+function vnWeekday(now = Date.now()) {
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: VN_TZ,
+    weekday: "short",
+  }).format(new Date(now));
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[wd] ?? 0;
+}
+
+function vnHour(now = Date.now()) {
+  const h = new Intl.DateTimeFormat("en-US", {
+    timeZone: VN_TZ,
+    hour: "numeric",
+    hourCycle: "h23",
+  })
+    .formatToParts(new Date(now))
+    .find((p) => p.type === "hour")?.value;
+  return Number(h) || 0;
+}
+
+function addDaysYmd(ymd, days) {
+  const t = Date.parse(`${ymd}T12:00:00+07:00`) + days * DAY_MS;
+  return vnYmd(t);
+}
+
+function weekdayLabelVn(ymd) {
+  const t = Date.parse(`${ymd}T12:00:00+07:00`);
+  return VN_WEEKDAY_LABEL[vnWeekday(t)] || ymd;
+}
+
+/** Hôm nay / Ngày mai / Thứ … */
+function deliveryOptionLabel(ymd, now = Date.now()) {
+  const today = vnYmd(now);
+  if (ymd === today) return "Hôm nay";
+  if (ymd === addDaysYmd(today, 1)) return "Ngày mai";
+  return weekdayLabelVn(ymd);
+}
+
+/**
+ * Mon–Sat: today → Sunday this week.
+ * Sunday before 17:00: Hôm nay + next Mon–Sun.
+ * Sunday from 17:00: next Mon–Sun only.
+ */
+function deliveryDateOptions(now = Date.now()) {
+  const today = vnYmd(now);
+  const wd = vnWeekday(now);
+  const hour = vnHour(now);
+  /** @type {Array<{ymd:string,label:string}>} */
+  const opts = [];
+
+  if (wd === 0) {
+    if (hour < 17) {
+      opts.push({ ymd: today, label: deliveryOptionLabel(today, now) });
+    }
+    for (let i = 1; i <= 7; i++) {
+      const ymd = addDaysYmd(today, i);
+      opts.push({ ymd, label: deliveryOptionLabel(ymd, now) });
+    }
+    return opts;
+  }
+
+  const daysUntilSunday = 7 - wd;
+  for (let i = 0; i <= daysUntilSunday; i++) {
+    const ymd = addDaysYmd(today, i);
+    opts.push({ ymd, label: deliveryOptionLabel(ymd, now) });
+  }
+  return opts;
+}
+
+/** Before 17:00 → today; from 17:00 → first available (tomorrow / Monday) */
+function defaultDeliveryYmd(now = Date.now()) {
+  const opts = deliveryDateOptions(now);
+  if (!opts.length) return vnYmd(now);
+  return opts[0].ymd;
+}
+
+function deliveryDateLabel(ymd, now = Date.now()) {
+  if (!ymd) return "";
+  return deliveryOptionLabel(ymd, now);
+}
+
 function slotLabel(slot) {
-  if (slot === "trua") return "Giao trưa";
-  if (slot === "chieu") return "Giao chiều";
+  if (slot === "trua") return "Trưa";
+  if (slot === "chieu") return "Chiều";
   return "";
 }
 
@@ -1004,6 +1150,48 @@ function selectedDeliverySlot(name = "delivery_slot") {
 function setDeliverySlot(name, value) {
   const el = document.querySelector(`input[name="${name}"][value="${value}"]`);
   if (el instanceof HTMLInputElement) el.checked = true;
+}
+
+function selectedDeliveryDate(name = "delivery_date") {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el instanceof HTMLInputElement ? el.value : "";
+}
+
+function renderDeliveryDateOptions(rootId, inputName, selectedYmd, extraYmd) {
+  const root = $(rootId);
+  if (!root) return;
+  const opts = deliveryDateOptions();
+  const chosen =
+    selectedYmd ||
+    defaultDeliveryYmd();
+  const list = [...opts];
+  if (extraYmd && /^\d{4}-\d{2}-\d{2}$/.test(extraYmd) && !list.some((o) => o.ymd === extraYmd)) {
+    list.unshift({
+      ymd: extraYmd,
+      label: deliveryDateLabel(extraYmd),
+    });
+  }
+  const active = list.some((o) => o.ymd === chosen) ? chosen : list[0]?.ymd || "";
+  const hasRelLabel = list.some(
+    (o) => o.label === "Hôm nay" || o.label === "Ngày mai",
+  );
+  root.innerHTML = list
+    .map((o) => {
+      const isSun = vnWeekday(Date.parse(`${o.ymd}T12:00:00+07:00`)) === 0;
+      const wide =
+        o.label === "Hôm nay" || o.label === "Ngày mai"
+          ? " date-preset-wide"
+          : !hasRelLabel && isSun
+            ? " date-preset-wide"
+            : "";
+      return `<label class="slot-option date-preset${wide}">
+        <input type="radio" name="${escapeHtml(inputName)}" value="${escapeHtml(o.ymd)}" ${
+          o.ymd === active ? "checked" : ""
+        } />
+        <span>${escapeHtml(o.label)}</span>
+      </label>`;
+    })
+    .join("");
 }
 
 function refreshEditOrderMeta() {
@@ -1065,6 +1253,12 @@ function openEditOrderModal(order) {
   $("edit-order-customer").value = order.customer || "";
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
+  renderDeliveryDateOptions(
+    "edit-delivery-date-options",
+    "edit_delivery_date",
+    order.delivery_date || defaultDeliveryYmd(),
+    order.delivery_date || "",
+  );
   setDeliverySlot(
     "edit_delivery_slot",
     order.delivery_slot === "chieu" ? "chieu" : "trua",
@@ -1459,11 +1653,24 @@ $("edit-order-items")?.addEventListener("click", (e) => {
   else if (remove) removeEditOrderLine(remove);
 });
 
+$("edit-order-customer")?.addEventListener("input", () => {
+  $("edit-order-customer")?.closest(".field")?.classList.remove("is-invalid");
+});
+
 $("edit-order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!editingOrder) return;
+  const nameEl = $("edit-order-customer");
+  const customer = nameEl?.value.trim() || "";
+  if (!customer) {
+    showComposeIssue(nameEl, "Nhập tên khách hàng");
+    return;
+  }
   if (!editOrderItems.length) {
-    toast("Đơn phải còn ít nhất 1 món");
+    showComposeIssue(
+      $("edit-order-items")?.closest(".compose-section") || $("edit-order-items"),
+      "Đơn phải còn ít nhất 1 món",
+    );
     return;
   }
   const delivery_slot = selectedDeliverySlot("edit_delivery_slot");
@@ -1471,6 +1678,8 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const delivery_date =
+    selectedDeliveryDate("edit_delivery_date") || defaultDeliveryYmd();
   saveEditOrderBtn.disabled = true;
   try {
     await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
@@ -1485,11 +1694,13 @@ $("edit-order-form").addEventListener("submit", async (e) => {
           qty: item.qty,
         })),
         delivery_slot,
-        customer: $("edit-order-customer").value.trim(),
+        delivery_date,
+        customer,
         phone: $("edit-order-phone").value.trim(),
         note: $("edit-order-note").value.trim(),
       }),
     });
+    clearComposeInvalid(editOrderModal);
     closeEditOrderModal();
     toast("Đã cập nhật đơn");
     await Promise.all([loadOrders(), loadProducts()]);
@@ -1575,10 +1786,23 @@ orderMenuEl?.addEventListener("click", (e) => {
   }
 });
 
+$("customer-name")?.addEventListener("input", () => {
+  $("customer-name")?.closest(".field")?.classList.remove("is-invalid");
+});
+
 $("order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const nameEl = $("customer-name");
+  const customer = nameEl?.value.trim() || "";
+  if (!customer) {
+    showComposeIssue(nameEl, "Nhập tên khách hàng");
+    return;
+  }
   if (!cart.length) {
-    toast("Chưa thêm món vào đơn");
+    showComposeIssue(
+      orderCartLinesEl?.closest(".compose-section") || orderCartLinesEl,
+      "Thêm ít nhất 1 món vào đơn",
+    );
     return;
   }
   const delivery_slot = selectedDeliverySlot();
@@ -1586,6 +1810,8 @@ $("order-form").addEventListener("submit", async (e) => {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const delivery_date =
+    selectedDeliveryDate("delivery_date") || defaultDeliveryYmd();
   const items = cart.map((line) => ({
     id: line.id,
     name: line.name,
@@ -1604,12 +1830,14 @@ $("order-form").addEventListener("submit", async (e) => {
       body: JSON.stringify({
         items,
         delivery_slot,
-        customer: $("customer-name").value.trim(),
+        delivery_date,
+        customer,
         phone: $("customer-phone").value.trim(),
         note: $("order-note").value.trim(),
       }),
     });
     cart = [];
+    clearComposeInvalid(orderModal);
     closeOrderModal();
     toast("Đã tạo đơn");
     await Promise.all([loadOrders(), loadProducts()]);

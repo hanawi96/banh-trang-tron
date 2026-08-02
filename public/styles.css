@@ -528,12 +528,20 @@ html.booting .tabbar {
   padding: 10px 14px;
   font-size: 0.92rem;
   white-space: nowrap;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  border: 1px solid #b7dbc9;
+}
+
+.btn.add:active {
+  background: #d7f0e4;
 }
 
 .btn.add svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  stroke: currentColor;
 }
 
 .slot-field {
@@ -558,6 +566,48 @@ html.booting .tabbar {
   padding: 4px;
   border-radius: 14px;
   background: rgba(16, 35, 28, 0.06);
+}
+
+.slot-options.date-options {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.slot-option.date-preset-wide {
+  grid-column: span 2;
+}
+
+.slot-hint {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.slot-field + .slot-field {
+  margin-top: 10px;
+}
+
+.slot-option.date-preset span {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.88rem;
+  border-radius: 12px;
+  white-space: nowrap;
+  padding-inline: 8px;
+}
+
+.slot-option.date-preset input:checked + span {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(12, 122, 82, 0.22);
 }
 
 .slot-option {
@@ -616,7 +666,8 @@ html.booting .tabbar {
   color: #9a4d00;
 }
 
-.order-slot-muted {
+.order-slot-muted,
+.order-slot-none {
   background: #eef1ef;
   color: #7a8781;
 }
@@ -681,6 +732,24 @@ html.booting .tabbar {
 .field textarea:focus {
   border-color: #8fc9ae;
   box-shadow: 0 0 0 3px rgba(12, 122, 82, 0.12);
+}
+
+.field.is-invalid input,
+.field.is-invalid textarea {
+  border-color: #d4534b;
+  box-shadow: 0 0 0 3px rgba(212, 83, 75, 0.14);
+  background: #fff8f7;
+}
+
+.compose-section.is-invalid {
+  border-color: rgba(212, 83, 75, 0.45);
+  box-shadow: 0 0 0 3px rgba(212, 83, 75, 0.1);
+}
+
+.req-mark {
+  font-style: normal;
+  font-weight: 800;
+  color: #c2473f;
 }
 
 .field textarea {
@@ -955,7 +1024,7 @@ body.bulk-open .tabbar {
 }
 
 .order-status-btn-pending {
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  background: linear-gradient(180deg, #18a86a 0%, #0f8a55 100%);
   color: #fff;
 }
 
@@ -1051,28 +1120,34 @@ body.bulk-open .tabbar {
 
 .order-main {
   display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 12px;
-  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.order-thumb {
-  width: 72px;
-  height: 72px;
+.order-items {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.order-item-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.order-item-thumb {
+  width: 48px;
+  height: 48px;
   object-fit: cover;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--accent-soft);
 }
 
-.order-thumb-empty {
+.order-item-thumb-empty {
   display: block;
-}
-
-.order-info {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-  align-content: start;
 }
 
 .order-receiver {
@@ -1082,9 +1157,31 @@ body.bulk-open .tabbar {
   letter-spacing: -0.02em;
   line-height: 1.3;
   color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.order-receiver-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.order-buy-count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  background: #e8f1ff;
+  color: #1d4f91;
+  border: 1px solid #c5d8f5;
 }
 
 .order-receiver-empty {
@@ -1097,6 +1194,7 @@ body.bulk-open .tabbar {
   display: grid;
   gap: 2px;
   min-width: 0;
+  align-content: center;
 }
 
 .order-line {
@@ -1283,7 +1381,23 @@ body.bulk-open .tabbar {
   text-overflow: ellipsis;
 }
 
-.cart-line-info span {
+.cart-line-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cart-line-meta .order-size {
+  margin-left: 0;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  border: 1px solid #b7dbc9;
+}
+
+.cart-line-price {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 650;

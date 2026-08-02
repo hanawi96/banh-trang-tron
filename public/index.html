@@ -145,8 +145,17 @@
           <section class="compose-section">
             <h3 class="compose-title">Thông tin giao</h3>
             <fieldset class="slot-field">
-              <legend>Thời gian giao</legend>
-              <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
+              <legend>Ngày giao</legend>
+              <div
+                class="slot-options date-options"
+                id="delivery-date-options"
+                role="radiogroup"
+                aria-label="Ngày giao"
+              ></div>
+            </fieldset>
+            <fieldset class="slot-field">
+              <legend>Buổi giao</legend>
+              <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
                 <label class="slot-option">
                   <input type="radio" name="delivery_slot" value="trua" checked />
                   <span>Giao trưa</span>
@@ -158,7 +167,7 @@
               </div>
             </fieldset>
             <label class="field">
-              <span>Tên khách hàng</span>
+              <span>Tên khách hàng <em class="req-mark">*</em></span>
               <input
                 id="customer-name"
                 name="customer"
@@ -166,6 +175,7 @@
                 autocomplete="name"
                 placeholder="Nhập tên khách"
                 maxlength="120"
+                aria-required="true"
               />
             </label>
             <label class="field">
@@ -239,8 +249,17 @@
           <div id="edit-order-items" class="cart-lines edit-order-items"></div>
           <p class="modal-meta" id="edit-order-meta"></p>
           <fieldset class="slot-field">
-            <legend>Thời gian giao</legend>
-            <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
+            <legend>Ngày giao</legend>
+            <div
+              class="slot-options date-options"
+              id="edit-delivery-date-options"
+              role="radiogroup"
+              aria-label="Ngày giao"
+            ></div>
+          </fieldset>
+          <fieldset class="slot-field">
+            <legend>Buổi giao</legend>
+            <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
               <label class="slot-option">
                 <input type="radio" name="edit_delivery_slot" value="trua" checked />
                 <span>Giao trưa</span>
@@ -252,8 +271,14 @@
             </div>
           </fieldset>
           <label class="field">
-            <span>Tên khách hàng</span>
-            <input id="edit-order-customer" type="text" maxlength="120" placeholder="Nhập tên khách" />
+            <span>Tên khách hàng <em class="req-mark">*</em></span>
+            <input
+              id="edit-order-customer"
+              type="text"
+              maxlength="120"
+              placeholder="Nhập tên khách"
+              aria-required="true"
+            />
           </label>
           <label class="field">
             <span>Số điện thoại</span>

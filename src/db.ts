@@ -23,6 +23,7 @@ export async function ensureSchema(db: Client): Promise<void> {
         customer TEXT,
         phone TEXT,
         delivery_slot TEXT,
+        delivery_date TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at INTEGER NOT NULL
       )`,
@@ -44,6 +45,7 @@ export async function ensureSchema(db: Client): Promise<void> {
   for (const col of [
     "phone TEXT",
     "delivery_slot TEXT",
+    "delivery_date TEXT",
     "status TEXT NOT NULL DEFAULT 'pending'",
   ]) {
     try {
@@ -76,9 +78,137 @@ export type OrderRow = {
   customer: string | null;
   phone: string | null;
   delivery_slot: string | null;
+  delivery_date: string | null;
   status: string | null;
   created_at: number;
 };
+
+const VN_WEEKDAY_LABEL = [
+  "Chủ nhật",
+  "Thứ 2",
+  "Thứ 3",
+  "Thứ 4",
+  "Thứ 5",
+  "Thứ 6",
+  "Thứ 7",
+] as const;
+
+/** YYYY-MM-DD in Asia/Ho_Chi_Minh */
+export function vnYmd(now = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: VN_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(now));
+}
+
+/** 0=Sun … 6=Sat in Vietnam wall clock */
+export function vnWeekday(now = Date.now()): number {
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: VN_TZ,
+    weekday: "short",
+  }).format(new Date(now));
+  const map: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return map[wd] ?? 0;
+}
+
+/** Hour 0–23 in Vietnam */
+export function vnHour(now = Date.now()): number {
+  const h = new Intl.DateTimeFormat("en-US", {
+    timeZone: VN_TZ,
+    hour: "numeric",
+    hourCycle: "h23",
+  })
+    .formatToParts(new Date(now))
+    .find((p) => p.type === "hour")?.value;
+  return Number(h) || 0;
+}
+
+export function addDaysYmd(ymd: string, days: number): string {
+  const t = Date.parse(`${ymd}T12:00:00+07:00`) + days * DAY_MS;
+  return vnYmd(t);
+}
+
+export function weekdayLabelVn(ymd: string): string {
+  const t = Date.parse(`${ymd}T12:00:00+07:00`);
+  return VN_WEEKDAY_LABEL[vnWeekday(t)] || ymd;
+}
+
+/** Hôm nay / Ngày mai / Thứ … */
+export function deliveryOptionLabel(ymd: string, now = Date.now()): string {
+  const today = vnYmd(now);
+  if (ymd === today) return "Hôm nay";
+  if (ymd === addDaysYmd(today, 1)) return "Ngày mai";
+  return weekdayLabelVn(ymd);
+}
+
+export type DeliveryDateOption = { ymd: string; label: string };
+
+/**
+ * Mon–Sat: today → Sunday this week.
+ * Sunday before 17:00: Hôm nay + next Mon–Sun.
+ * Sunday from 17:00: next Mon–Sun only (no hôm nay).
+ */
+export function deliveryDateOptions(now = Date.now()): DeliveryDateOption[] {
+  const today = vnYmd(now);
+  const wd = vnWeekday(now);
+  const hour = vnHour(now);
+  const opts: DeliveryDateOption[] = [];
+
+  if (wd === 0) {
+    // Sunday
+    if (hour < 17) {
+      opts.push({ ymd: today, label: deliveryOptionLabel(today, now) });
+    }
+    for (let i = 1; i <= 7; i++) {
+      const ymd = addDaysYmd(today, i);
+      opts.push({ ymd, label: deliveryOptionLabel(ymd, now) });
+    }
+    return opts;
+  }
+
+  const daysUntilSunday = 7 - wd;
+  for (let i = 0; i <= daysUntilSunday; i++) {
+    const ymd = addDaysYmd(today, i);
+    opts.push({
+      ymd,
+      label: deliveryOptionLabel(ymd, now),
+    });
+  }
+  return opts;
+}
+
+/** Before 17:00 → today; from 17:00 → tomorrow / next Monday on Sunday evening */
+export function defaultDeliveryYmd(now = Date.now()): string {
+  const opts = deliveryDateOptions(now);
+  if (!opts.length) return vnYmd(now);
+  if (vnHour(now) < 17) return opts[0].ymd;
+  // After 17:00: first option is already tomorrow (or Monday on Sunday)
+  return opts[0].ymd;
+}
+
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function parseDeliveryDate(
+  raw: string | null | undefined,
+  now = Date.now(),
+  allowExtra?: string | null,
+): string | null {
+  const ymd = String(raw || "").trim();
+  if (!YMD_RE.test(ymd)) return null;
+  const allowed = new Set(deliveryDateOptions(now).map((o) => o.ymd));
+  if (allowExtra && YMD_RE.test(allowExtra)) allowed.add(allowExtra);
+  return allowed.has(ymd) ? ymd : null;
+}
 
 export type OrderStatus = "pending" | "done";
 
@@ -135,4 +265,23 @@ export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey 
 /** Wall-clock "now" as unix ms — same everywhere; pair with VN_TZ when formatting. */
 export function nowMs(): number {
   return Date.now();
+}
+
+/** Digits-only phone for matching (VN numbers). */
+export function normalizePhone(phone: string | null | undefined): string {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+/**
+ * Customer identity for order-count: prefer phone (≥8 digits), else name.
+ * Empty string = cannot attribute.
+ */
+export function customerIdentityKey(
+  customer: string | null | undefined,
+  phone: string | null | undefined,
+): string {
+  const p = normalizePhone(phone);
+  if (p.length >= 8) return `p:${p}`;
+  const n = String(customer || "").trim().toLowerCase();
+  return n ? `n:${n}` : "";
 }

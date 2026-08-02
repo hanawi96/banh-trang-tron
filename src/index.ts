@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
 import {
+  customerIdentityKey,
+  defaultDeliveryYmd,
   ensureSchema,
   getDb,
   nowMs,
   parseDateRangeKey,
+  parseDeliveryDate,
   rangeVn,
   type OrderItem,
 } from "./db";
@@ -191,16 +194,18 @@ app.get("/api/orders", async (c) => {
   const { start, end } = rangeVn(rangeKey);
   const limit = rangeKey === "today" || rangeKey === "yesterday" ? 200 : 2000;
   const result = await db.execute({
-    sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, status, created_at
+    sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
           FROM orders
           WHERE created_at >= ? AND created_at < ?
           ORDER BY
+            CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
+            delivery_date ASC,
             CASE delivery_slot
               WHEN 'trua' THEN 0
               WHEN 'chieu' THEN 1
               ELSE 2
             END ASC,
-            created_at DESC
+            created_at ASC
           LIMIT ?`,
     args: [start, end, limit],
   });
@@ -213,11 +218,37 @@ app.get("/api/orders", async (c) => {
     customer: row.customer ? String(row.customer) : "",
     phone: row.phone ? String(row.phone) : "",
     delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
+    delivery_date: row.delivery_date ? String(row.delivery_date) : "",
     status: String(row.status || "pending") === "done" ? "done" : "pending",
     created_at: Number(row.created_at),
   }));
 
-  return c.json({ orders, range: rangeKey, start, end, tz: "Asia/Ho_Chi_Minh" });
+  // All-time order counts per customer (phone first, else name)
+  const countRows = await db.execute(
+    `SELECT customer, phone, COUNT(*) AS cnt FROM orders GROUP BY customer, phone`,
+  );
+  const countByKey = new Map<string, number>();
+  for (const row of countRows.rows) {
+    const key = customerIdentityKey(
+      row.customer ? String(row.customer) : "",
+      row.phone ? String(row.phone) : "",
+    );
+    if (!key) continue;
+    countByKey.set(key, (countByKey.get(key) || 0) + Number(row.cnt || 0));
+  }
+  const ordersWithCount = orders.map((o) => ({
+    ...o,
+    order_count:
+      countByKey.get(customerIdentityKey(o.customer, o.phone)) || 0,
+  }));
+
+  return c.json({
+    orders: ordersWithCount,
+    range: rangeKey,
+    start,
+    end,
+    tz: "Asia/Ho_Chi_Minh",
+  });
 });
 
 app.post("/api/orders", async (c) => {
@@ -228,6 +259,7 @@ app.post("/api/orders", async (c) => {
       customer?: string;
       phone?: string;
       delivery_slot?: string;
+      delivery_date?: string;
     }>()
     .catch(() => null);
 
@@ -239,6 +271,10 @@ app.post("/api/orders", async (c) => {
   if (!delivery_slot) {
     return c.json({ error: "Chọn giao trưa hoặc giao chiều" }, 400);
   }
+  const created_at = nowMs();
+  const delivery_date =
+    parseDeliveryDate(body.delivery_date, created_at) ||
+    defaultDeliveryYmd(created_at);
 
   const parsedCreate = parseOrderItems(body.items);
   if (parsedCreate instanceof Response) return parsedCreate;
@@ -247,15 +283,16 @@ app.post("/api/orders", async (c) => {
   const note = (body.note ?? "").trim().slice(0, 300);
   const customer = (body.customer ?? "").trim().slice(0, 120);
   const phone = (body.phone ?? "").trim().slice(0, 20);
+  if (!customer) {
+    return c.json({ error: "Nhập tên khách hàng" }, 400);
+  }
   const id = crypto.randomUUID();
-  // Unix ms (UTC epoch) — display/filter with Asia/Ho_Chi_Minh day bounds
-  const created_at = nowMs();
 
   const db = getDb(c.env);
   await ensureSchema(db);
   await db.execute({
-    sql: `INSERT INTO orders (id, items_json, total, note, customer, phone, delivery_slot, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    sql: `INSERT INTO orders (id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     args: [
       id,
       JSON.stringify(items),
@@ -264,11 +301,23 @@ app.post("/api/orders", async (c) => {
       customer || null,
       phone || null,
       delivery_slot,
+      delivery_date,
       created_at,
     ],
   });
 
-  return c.json({ ok: true, id, total, delivery_slot, status: "pending", created_at }, 201);
+  return c.json(
+    {
+      ok: true,
+      id,
+      total,
+      delivery_slot,
+      delivery_date,
+      status: "pending",
+      created_at,
+    },
+    201,
+  );
 });
 
 function parseOrderItems(rawItems: OrderItem[]): OrderItem[] | Response {
@@ -312,6 +361,7 @@ app.put("/api/orders/:id", async (c) => {
       customer?: string;
       phone?: string;
       delivery_slot?: string;
+      delivery_date?: string;
     }>()
     .catch(() => null);
 
@@ -336,20 +386,30 @@ app.put("/api/orders/:id", async (c) => {
   const note = (body.note ?? "").trim().slice(0, 300);
   const customer = (body.customer ?? "").trim().slice(0, 120);
   const phone = (body.phone ?? "").trim().slice(0, 20);
+  if (!customer) {
+    return c.json({ error: "Nhập tên khách hàng" }, 400);
+  }
 
   const db = getDb(c.env);
   await ensureSchema(db);
   const existing = await db.execute({
-    sql: `SELECT id FROM orders WHERE id = ? LIMIT 1`,
+    sql: `SELECT id, delivery_date FROM orders WHERE id = ? LIMIT 1`,
     args: [id],
   });
   if (!existing.rows.length) {
     return c.json({ error: "Không tìm thấy đơn" }, 404);
   }
+  const prevDate = existing.rows[0]?.delivery_date
+    ? String(existing.rows[0].delivery_date)
+    : "";
+  const delivery_date =
+    parseDeliveryDate(body.delivery_date, nowMs(), prevDate) ||
+    prevDate ||
+    defaultDeliveryYmd();
 
   await db.execute({
     sql: `UPDATE orders
-          SET items_json = ?, total = ?, note = ?, customer = ?, phone = ?, delivery_slot = ?
+          SET items_json = ?, total = ?, note = ?, customer = ?, phone = ?, delivery_slot = ?, delivery_date = ?
           WHERE id = ?`,
     args: [
       JSON.stringify(items),
@@ -358,6 +418,7 @@ app.put("/api/orders/:id", async (c) => {
       customer || null,
       phone || null,
       delivery_slot,
+      delivery_date,
       id,
     ],
   });
@@ -372,6 +433,7 @@ app.put("/api/orders/:id", async (c) => {
       customer,
       phone,
       delivery_slot,
+      delivery_date,
     },
   });
 });
