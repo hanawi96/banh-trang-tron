@@ -23,7 +23,7 @@
       <header class="topbar">
         <div class="topbar-text">
           <p class="brand-mark">Bánh tráng trộn</p>
-          <h1 id="view-title">Sản phẩm</h1>
+          <h1 id="view-title">Trang chủ</h1>
         </div>
         <button type="button" class="icon-btn icon-btn-refresh" id="refresh" aria-label="Tải lại dữ liệu" title="Tải lại">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
@@ -32,11 +32,14 @@
         </button>
       </header>
 
-      <section id="tab-products" class="tab-panel" data-tab="products">
-        <div id="menu" class="product-list"></div>
-      </section>
-
-      <section id="tab-orders" class="tab-panel hidden" data-tab="orders">
+      <section id="tab-orders" class="tab-panel" data-tab="orders">
+        <div class="home-cta">
+          <p class="home-cta-sub">Tạo đơn nhanh cho khách</p>
+          <button type="button" class="btn primary home-cta-btn" id="open-create-order">
+            <span class="home-cta-icon" aria-hidden="true">+</span>
+            <span>Thêm đơn hàng</span>
+          </button>
+        </div>
         <div class="orders-head">
           <p>Đơn hôm nay</p>
           <span id="orders-count">0</span>
@@ -57,6 +60,10 @@
         <div id="orders" class="order-list">
           <p class="empty">Chưa có đơn.</p>
         </div>
+      </section>
+
+      <section id="tab-products" class="tab-panel hidden" data-tab="products">
+        <div id="menu" class="product-list"></div>
       </section>
 
       <section id="tab-stats" class="tab-panel hidden" data-tab="stats">
@@ -83,12 +90,12 @@
 
       <nav class="tabbar" aria-label="Điều hướng">
         <div class="tabbar-inner">
-          <button type="button" class="tab active" data-go="products">
-            <span class="tab-label">Sản phẩm</span>
-          </button>
-          <button type="button" class="tab" data-go="orders">
-            <span class="tab-label">Đơn hàng</span>
+          <button type="button" class="tab active" data-go="orders">
+            <span class="tab-label">Trang chủ</span>
             <span class="badge hidden" id="orders-badge">0</span>
+          </button>
+          <button type="button" class="tab" data-go="products">
+            <span class="tab-label">Sản phẩm</span>
           </button>
           <button type="button" class="tab" data-go="stats">
             <span class="tab-label">Thống kê</span>
@@ -100,7 +107,7 @@
     <div id="order-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-order></div>
       <div
-        class="modal-sheet"
+        class="modal-sheet modal-sheet-order"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -108,64 +115,88 @@
         <div class="modal-grab"></div>
         <header class="modal-head">
           <div>
-            <p class="modal-kicker">Thêm đơn</p>
-            <h2 id="modal-title">Sản phẩm</h2>
-            <p class="modal-meta" id="modal-meta"></p>
+            <p class="modal-kicker">Đơn mới</p>
+            <div class="modal-title-row">
+              <h2 id="modal-title">Thêm đơn hàng</h2>
+              <p class="modal-meta" id="modal-meta"></p>
+            </div>
           </div>
           <button type="button" class="icon-btn" data-close-order aria-label="Đóng">
             Đóng
           </button>
         </header>
-        <form id="order-form" class="modal-form">
-          <fieldset class="slot-field">
-            <legend>Thời gian giao</legend>
-            <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
-              <label class="slot-option">
-                <input type="radio" name="delivery_slot" value="trua" checked />
-                <span>Giao trưa</span>
-              </label>
-              <label class="slot-option">
-                <input type="radio" name="delivery_slot" value="chieu" />
-                <span>Giao chiều</span>
-              </label>
+        <form id="order-form" class="modal-form order-compose">
+          <section class="compose-section">
+            <h3 class="compose-title">Thông tin giao</h3>
+            <fieldset class="slot-field">
+              <legend>Thời gian giao</legend>
+              <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
+                <label class="slot-option">
+                  <input type="radio" name="delivery_slot" value="trua" checked />
+                  <span>Giao trưa</span>
+                </label>
+                <label class="slot-option">
+                  <input type="radio" name="delivery_slot" value="chieu" />
+                  <span>Giao chiều</span>
+                </label>
+              </div>
+            </fieldset>
+            <label class="field">
+              <span>Tên khách hàng</span>
+              <input
+                id="customer-name"
+                name="customer"
+                type="text"
+                autocomplete="name"
+                placeholder="Nhập tên khách"
+                maxlength="120"
+              />
+            </label>
+            <label class="field">
+              <span>Số điện thoại</span>
+              <input
+                id="customer-phone"
+                name="phone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="09xx xxx xxx"
+                maxlength="20"
+              />
+            </label>
+            <label class="field">
+              <span>Lưu ý đơn hàng</span>
+              <textarea
+                id="order-note"
+                name="note"
+                rows="2"
+                placeholder="Ít cay, thêm trứng..."
+                maxlength="300"
+              ></textarea>
+            </label>
+          </section>
+
+          <section class="compose-section">
+            <div class="compose-title-row">
+              <h3 class="compose-title">Món trong đơn</h3>
+              <button type="button" class="bulk-clear hidden" id="cart-clear">Xóa hết</button>
             </div>
-          </fieldset>
-          <label class="field">
-            <span>Tên khách hàng</span>
-            <input
-              id="customer-name"
-              name="customer"
-              type="text"
-              autocomplete="name"
-              placeholder="Nhập tên khách"
-              maxlength="120"
-            />
-          </label>
-          <label class="field">
-            <span>Số điện thoại</span>
-            <input
-              id="customer-phone"
-              name="phone"
-              type="tel"
-              inputmode="tel"
-              autocomplete="tel"
-              placeholder="09xx xxx xxx"
-              maxlength="20"
-            />
-          </label>
-          <label class="field">
-            <span>Lưu ý đơn hàng</span>
-            <textarea
-              id="order-note"
-              name="note"
-              rows="3"
-              placeholder="Ít cay, thêm trứng..."
-              maxlength="300"
-            ></textarea>
-          </label>
-          <button class="btn primary full" type="submit" id="save-order">
-            Lưu đơn
-          </button>
+            <div id="order-cart-lines" class="cart-lines">
+              <p class="empty compose-empty">Chưa thêm món — chọn bên dưới.</p>
+            </div>
+          </section>
+
+          <section class="compose-section">
+            <h3 class="compose-title">Chọn sản phẩm</h3>
+            <div id="order-menu" class="product-list order-picker"></div>
+          </section>
+
+          <div class="compose-submit">
+            <button class="btn primary full btn-busyable" type="submit" id="save-order">
+              <span class="btn-spinner" aria-hidden="true"></span>
+              <span class="btn-label">Tạo đơn hàng</span>
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -183,37 +214,14 @@
           <div>
             <p class="modal-kicker">Sửa đơn</p>
             <h2 id="edit-order-title">Đơn hàng</h2>
-            <p class="modal-meta" id="edit-order-meta"></p>
           </div>
           <button type="button" class="icon-btn" data-close-edit-order aria-label="Đóng">
             Đóng
           </button>
         </header>
         <form id="edit-order-form" class="modal-form">
-          <div class="edit-order-product">
-            <img id="edit-order-thumb" alt="" width="64" height="64" />
-            <div class="edit-order-product-info">
-              <strong id="edit-order-product-name">Sản phẩm</strong>
-              <div class="qty edit-order-qty">
-                <button type="button" id="edit-order-minus" aria-label="Giảm">−</button>
-                <span id="edit-order-qty">1</span>
-                <button type="button" id="edit-order-plus" aria-label="Tăng">+</button>
-              </div>
-            </div>
-          </div>
-          <fieldset class="slot-field">
-            <legend>Size</legend>
-            <div class="slot-options" role="radiogroup" aria-label="Size">
-              <label class="slot-option">
-                <input type="radio" name="edit_order_size" value="nho" checked />
-                <span>Nhỏ</span>
-              </label>
-              <label class="slot-option">
-                <input type="radio" name="edit_order_size" value="to" />
-                <span>To</span>
-              </label>
-            </div>
-          </fieldset>
+          <div id="edit-order-items" class="cart-lines edit-order-items"></div>
+          <p class="modal-meta" id="edit-order-meta"></p>
           <fieldset class="slot-field">
             <legend>Thời gian giao</legend>
             <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
@@ -369,7 +377,7 @@
         <header class="modal-head">
           <div>
             <p class="modal-kicker danger">Xóa sản phẩm</p>
-            <h2 id="delete-title">Xác nhận xóa</h2>
+            <h2 id="delete-title">Sản phẩm</h2>
             <p class="modal-meta" id="delete-meta"></p>
           </div>
           <button type="button" class="icon-btn" data-close-delete aria-label="Đóng">

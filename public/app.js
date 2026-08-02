@@ -18,8 +18,9 @@ const saveProductBtn = $("save-product");
 const confirmDeleteBtn = $("confirm-delete");
 const editPreview = $("edit-preview");
 const editImageInput = $("edit-image");
-const editOrderQtyEl = $("edit-order-qty");
 const editOrderMeta = $("edit-order-meta");
+const orderMenuEl = $("order-menu");
+const orderCartLinesEl = $("order-cart-lines");
 
 const PRODUCT_CACHE_KEY = "bt_products_v2";
 
@@ -27,6 +28,8 @@ const PRODUCT_CACHE_KEY = "bt_products_v2";
 const qtyMap = new Map();
 /** @type {Map<string, 'nho'|'to'>} */
 const sizeMap = new Map();
+/** @type {Array<{key:string,id:string,name:string,size:'nho'|'to',qty:number,price:number,image:string}>} */
+let cart = [];
 /** @type {Array<any>} */
 let products = [];
 /** @type {Array<any>} */
@@ -42,16 +45,13 @@ const statusBusy = new Set();
 /** @type {Set<string>} */
 const selectedOrderIds = new Set();
 /** @type {any} */
-let pendingProduct = null;
-/** @type {any} */
 let editingProduct = null;
 /** @type {any} */
 let deletingProduct = null;
 /** @type {any} */
 let editingOrder = null;
-let editOrderQty = 1;
-/** @type {'nho'|'to'} */
-let editOrderSize = "nho";
+/** @type {Array<{id:string,name:string,size:'nho'|'to',qty:number,price:number,image?:string}>} */
+let editOrderItems = [];
 /** @type {string[]} */
 let pendingDeleteOrderIds = [];
 /** @type {File|null} */
@@ -62,11 +62,14 @@ const EDIT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="
 const DELETE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
 const PLUS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>`;
 
-const vnd = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "VND",
-  maximumFractionDigits: 0,
-});
+const vndNum = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
+
+/** @param {number|string|null|undefined} n */
+function formatVnd(n) {
+  return `${vndNum.format(Math.round(Number(n) || 0))}đ`;
+}
+
+const vnd = { format: formatVnd };
 
 const timeFmt = new Intl.DateTimeFormat("vi-VN", {
   timeZone: "Asia/Ho_Chi_Minh",
@@ -130,7 +133,7 @@ function finishBoot() {
 
 function revealApp() {
   appEl.classList.remove("hidden");
-  setTab("products");
+  setTab("orders");
   finishBoot();
 }
 
@@ -156,16 +159,18 @@ function getSize(id) {
 function setSize(id, size) {
   const next = normalizeSize(size);
   sizeMap.set(id, next);
-  const card = menuEl.querySelector(`[data-product-id="${CSS.escape(id)}"]`);
-  if (!card) return;
-  card.querySelectorAll("[data-size]").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-size") === next);
-  });
   const product = products.find((p) => p.id === id);
-  const priceEl = card.querySelector("[data-price]");
-  if (product && priceEl) {
-    priceEl.textContent = vnd.format(productUnitPrice(product, next));
-  }
+  document
+    .querySelectorAll(`[data-product-id="${CSS.escape(id)}"]`)
+    .forEach((card) => {
+      card.querySelectorAll("[data-size]").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-size") === next);
+      });
+      const priceEl = card.querySelector("[data-price]");
+      if (product && priceEl) {
+        priceEl.textContent = vnd.format(productUnitPrice(product, next));
+      }
+    });
 }
 
 function productUnitPrice(product, size) {
@@ -339,8 +344,9 @@ function getQty(id) {
 function setQty(id, next) {
   const q = Math.max(1, Math.min(99, next));
   qtyMap.set(id, q);
-  const span = menuEl.querySelector(`[data-qty="${CSS.escape(id)}"]`);
-  if (span) span.textContent = String(q);
+  document.querySelectorAll(`[data-qty="${CSS.escape(id)}"]`).forEach((span) => {
+    span.textContent = String(q);
+  });
 }
 
 function anyModalOpen() {
@@ -357,17 +363,16 @@ function lockBody(lock) {
   document.body.style.overflow = lock || anyModalOpen() ? "hidden" : "";
 }
 
-function renderMenu() {
-  const frag = document.createDocumentFragment();
-  for (const p of products) {
-    if (!qtyMap.has(p.id)) qtyMap.set(p.id, 1);
-    if (!sizeMap.has(p.id)) sizeMap.set(p.id, "nho");
-    const q = getQty(p.id);
-    const size = getSize(p.id);
-    const unit = productUnitPrice(p, size);
-    const row = document.createElement("article");
-    row.className = "product";
-    row.dataset.productId = p.id;
+function buildProductCard(p, { manage }) {
+  if (!qtyMap.has(p.id)) qtyMap.set(p.id, 1);
+  if (!sizeMap.has(p.id)) sizeMap.set(p.id, "nho");
+  const q = getQty(p.id);
+  const size = getSize(p.id);
+  const unit = productUnitPrice(p, size);
+  const row = document.createElement("article");
+  row.className = manage ? "product product-manage" : "product";
+  row.dataset.productId = p.id;
+  if (manage) {
     row.innerHTML = `
       <div class="product-fabs">
         <button type="button" class="fab" data-edit="${escapeHtml(p.id)}" aria-label="Sửa ${escapeHtml(p.name)}">
@@ -380,26 +385,184 @@ function renderMenu() {
       <img class="product-thumb" src="${imageUrl(p)}" alt="" width="92" height="92" decoding="async" />
       <div class="product-body">
         <h3>${escapeHtml(p.name)}</h3>
-        <p class="price" data-price>${vnd.format(unit)}</p>
-      </div>
-      <div class="product-controls">
-        <div class="product-pick-row">
-          <div class="qty">
-            <button type="button" data-minus="${escapeHtml(p.id)}" aria-label="Giảm">−</button>
-            <span data-qty="${escapeHtml(p.id)}">${q}</span>
-            <button type="button" data-plus="${escapeHtml(p.id)}" aria-label="Tăng">+</button>
-          </div>
-          <div class="size-seg" role="group" aria-label="Chọn size">
-            <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="nho" class="${size === "nho" ? "active" : ""}">Nhỏ</button>
-            <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="to" class="${size === "to" ? "active" : ""}">To</button>
-          </div>
-        </div>
-        <button type="button" class="btn primary add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm đơn</span></button>
+        <p class="price">Nhỏ ${vnd.format(p.price)} · To ${vnd.format(p.price_large ?? p.price)}</p>
+        <p class="sold">Đã bán ${Number(p.sold) || 0}</p>
       </div>
     `;
-    frag.appendChild(row);
+    return row;
   }
-  menuEl.replaceChildren(frag);
+  row.innerHTML = `
+    <img class="product-thumb" src="${imageUrl(p)}" alt="" width="92" height="92" decoding="async" />
+    <div class="product-body">
+      <h3>${escapeHtml(p.name)}</h3>
+      <p class="price" data-price>${vnd.format(unit)}</p>
+      <p class="sold">Đã bán ${Number(p.sold) || 0}</p>
+    </div>
+    <div class="product-controls">
+      <div class="product-pick-row">
+        <div class="qty">
+          <button type="button" data-minus="${escapeHtml(p.id)}" aria-label="Giảm">−</button>
+          <span data-qty="${escapeHtml(p.id)}">${q}</span>
+          <button type="button" data-plus="${escapeHtml(p.id)}" aria-label="Tăng">+</button>
+        </div>
+        <div class="size-seg" role="group" aria-label="Chọn size">
+          <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="nho" class="${size === "nho" ? "active" : ""}">Nhỏ</button>
+          <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="to" class="${size === "to" ? "active" : ""}">To</button>
+        </div>
+      </div>
+      <button type="button" class="btn primary add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm vào đơn</span></button>
+    </div>
+  `;
+  return row;
+}
+
+function renderProductList(root, { manage }) {
+  if (!root) return;
+  const frag = document.createDocumentFragment();
+  for (const p of products) frag.appendChild(buildProductCard(p, { manage }));
+  root.replaceChildren(frag);
+}
+
+function renderMenu() {
+  renderProductList(menuEl, { manage: true });
+  if (orderMenuEl && !orderModal.classList.contains("hidden")) {
+    renderProductList(orderMenuEl, { manage: false });
+  }
+}
+
+function lineKey(id, size) {
+  return `${id}:${normalizeSize(size)}`;
+}
+
+function cartTotals(list = cart) {
+  let parts = 0;
+  let total = 0;
+  for (const line of list) {
+    const qty = Number(line.qty) || 0;
+    parts += qty;
+    total += qty * (Number(line.price) || 0);
+  }
+  return { parts, total, lines: list.length };
+}
+
+function renderLineRow(line, { prefix }) {
+  const el = document.createElement("div");
+  el.className = "cart-line";
+  el.dataset.lineKey = line.key || lineKey(line.id, line.size);
+  el.innerHTML = `
+    <div class="cart-line-info">
+      <strong>${escapeHtml(line.name)}</strong>
+      <span>Size ${escapeHtml(sizeLabel(line.size))} · ${vnd.format(line.price)}</span>
+    </div>
+    <div class="qty">
+      <button type="button" data-${prefix}-minus="${escapeHtml(el.dataset.lineKey)}" aria-label="Giảm">−</button>
+      <span>${line.qty}</span>
+      <button type="button" data-${prefix}-plus="${escapeHtml(el.dataset.lineKey)}" aria-label="Tăng">+</button>
+    </div>
+    <button type="button" class="cart-line-remove" data-${prefix}-remove="${escapeHtml(el.dataset.lineKey)}" aria-label="Xóa dòng">
+      ${DELETE_ICON}
+    </button>
+  `;
+  return el;
+}
+
+function updateComposeMeta() {
+  const { parts, total, lines } = cartTotals();
+  const meta = $("modal-meta");
+  if (meta) {
+    meta.textContent = lines
+      ? `${lines} món · ${parts} phần · ${formatVnd(total)}`
+      : "Chưa có món";
+  }
+  $("cart-clear")?.classList.toggle("hidden", !lines);
+  const label = saveBtn?.querySelector(".btn-label");
+  if (label && !saveBtn.classList.contains("is-busy")) {
+    label.textContent = lines
+      ? `Tạo đơn hàng (${formatVnd(total)})`
+      : "Tạo đơn hàng";
+  }
+}
+
+function renderCartLines() {
+  if (!orderCartLinesEl) return;
+  if (!cart.length) {
+    orderCartLinesEl.innerHTML =
+      `<p class="empty compose-empty">Chưa thêm món — chọn bên dưới.</p>`;
+    updateComposeMeta();
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const line of cart) frag.appendChild(renderLineRow(line, { prefix: "cart" }));
+  orderCartLinesEl.replaceChildren(frag);
+  updateComposeMeta();
+}
+
+function addToCart(product) {
+  const size = getSize(product.id);
+  const addQty = getQty(product.id);
+  const price = productUnitPrice(product, size);
+  const key = lineKey(product.id, size);
+  const existing = cart.find((l) => l.key === key);
+  if (existing) {
+    existing.qty = Math.min(99, existing.qty + addQty);
+    existing.price = price;
+    existing.name = product.name;
+    existing.image = product.image;
+  } else {
+    cart.push({
+      key,
+      id: product.id,
+      name: product.name,
+      size,
+      qty: addQty,
+      price,
+      image: product.image,
+    });
+  }
+  setQty(product.id, 1);
+  renderCartLines();
+  toast(`+${addQty} ${product.name} (${sizeLabel(size)})`);
+}
+
+function updateCartLine(key, delta) {
+  const line = cart.find((l) => l.key === key);
+  if (!line) return;
+  line.qty += delta;
+  if (line.qty < 1) cart = cart.filter((l) => l.key !== key);
+  else if (line.qty > 99) line.qty = 99;
+  renderCartLines();
+}
+
+function removeCartLine(key) {
+  cart = cart.filter((l) => l.key !== key);
+  renderCartLines();
+}
+
+function clearCart() {
+  cart = [];
+  renderCartLines();
+}
+
+function openCreateOrder() {
+  cart = [];
+  $("modal-title").textContent = "Thêm đơn hàng";
+  $("customer-name").value = "";
+  $("customer-phone").value = "";
+  $("order-note").value = "";
+  const trua = document.querySelector('input[name="delivery_slot"][value="trua"]');
+  if (trua instanceof HTMLInputElement) trua.checked = true;
+  renderCartLines();
+  renderProductList(orderMenuEl, { manage: false });
+  orderModal.classList.remove("hidden");
+  orderModal.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("customer-name")?.focus());
+}
+
+function closeOrderModal() {
+  orderModal.classList.add("hidden");
+  orderModal.setAttribute("aria-hidden", "true");
+  lockBody(false);
 }
 
 function setProducts(list, { render = true, cache = true } = {}) {
@@ -669,6 +832,7 @@ async function deleteOrders(ids) {
       });
     }
     toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
+    loadProducts().catch(() => {});
   } catch (err) {
     ordersCache = snapshot;
     statsOrders = statsSnapshot;
@@ -716,11 +880,7 @@ function setTab(tab) {
   $("tab-orders").classList.toggle("hidden", tab !== "orders");
   $("tab-stats")?.classList.toggle("hidden", tab !== "stats");
   viewTitle.textContent =
-    tab === "products" ? "Sản phẩm" : tab === "orders" ? "Đơn hàng" : "Thống kê";
-  const topbar = document.querySelector(".topbar");
-  const topbarText = document.querySelector(".topbar-text");
-  topbar?.classList.toggle("topbar-compact", tab === "orders");
-  topbarText?.classList.toggle("hidden", tab === "orders");
+    tab === "products" ? "Sản phẩm" : tab === "orders" ? "Trang chủ" : "Thống kê";
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-go") === tab);
   });
@@ -730,6 +890,8 @@ function setTab(tab) {
   }
   if (tab === "orders") {
     loadOrders().catch(() => {});
+  } else if (tab === "products") {
+    renderProductList(menuEl, { manage: true });
   } else if (tab === "stats") {
     loadStats().catch(() => {
       const root = $("stats");
@@ -755,38 +917,69 @@ function setDeliverySlot(name, value) {
 }
 
 function refreshEditOrderMeta() {
-  if (!editingOrder?.items?.[0]) return;
-  const item = editingOrder.items[0];
-  const catalog = products.find((p) => p.id === item.id);
-  const unit = catalog
-    ? productUnitPrice(catalog, editOrderSize)
-    : Number(item.price) || 0;
-  editOrderQtyEl.textContent = String(editOrderQty);
-  editOrderMeta.textContent = `Size ${sizeLabel(editOrderSize)} · ${editOrderQty} phần · ${vnd.format(unit * editOrderQty)}`;
+  if (!editOrderMeta) return;
+  const { parts, total, lines } = cartTotals(editOrderItems);
+  if (!lines) {
+    editOrderMeta.textContent = "Chưa có món trong đơn";
+    return;
+  }
+  editOrderMeta.textContent = `${lines} món · ${parts} phần · ${vnd.format(total)}`;
+}
+
+function renderEditOrderItems() {
+  const root = $("edit-order-items");
+  if (!root) return;
+  if (!editOrderItems.length) {
+    root.innerHTML = `<p class="empty">Đơn trống — thêm món từ giỏ hoặc hủy.</p>`;
+    refreshEditOrderMeta();
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const item of editOrderItems) {
+    const line = {
+      ...item,
+      key: lineKey(item.id, item.size),
+      size: normalizeSize(item.size),
+    };
+    frag.appendChild(renderLineRow(line, { prefix: "edit" }));
+  }
+  root.replaceChildren(frag);
+  refreshEditOrderMeta();
 }
 
 function openEditOrderModal(order) {
   editingOrder = order;
-  const item = order.items?.[0];
-  if (!item) {
+  const items = order.items || [];
+  if (!items.length) {
     toast("Đơn không hợp lệ");
     return;
   }
-  editOrderQty = Math.max(1, Math.min(99, Number(item.qty) || 1));
-  editOrderSize = normalizeSize(item.size);
-  $("edit-order-title").textContent = item.name;
-  $("edit-order-product-name").textContent = item.name;
-  const imgKey = resolveItemImage(item);
-  $("edit-order-thumb").src = imagesPath(imgKey);
+  editOrderItems = items.map((item) => {
+    const size = normalizeSize(item.size);
+    const catalog = products.find((p) => p.id === item.id);
+    return {
+      id: item.id,
+      name: item.name,
+      size,
+      qty: Math.max(1, Math.min(99, Number(item.qty) || 1)),
+      price: catalog
+        ? productUnitPrice(catalog, size)
+        : Number(item.price) || 0,
+      image: item.image || resolveItemImage(item),
+    };
+  });
+  $("edit-order-title").textContent =
+    editOrderItems.length === 1
+      ? editOrderItems[0].name
+      : `Đơn ${editOrderItems.length} món`;
   $("edit-order-customer").value = order.customer || "";
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
-  setDeliverySlot("edit_order_size", editOrderSize);
   setDeliverySlot(
     "edit_delivery_slot",
     order.delivery_slot === "chieu" ? "chieu" : "trua",
   );
-  refreshEditOrderMeta();
+  renderEditOrderItems();
   editOrderModal.classList.remove("hidden");
   editOrderModal.setAttribute("aria-hidden", "false");
   lockBody(true);
@@ -795,34 +988,27 @@ function openEditOrderModal(order) {
 
 function closeEditOrderModal() {
   editingOrder = null;
+  editOrderItems = [];
   editOrderModal.classList.add("hidden");
   editOrderModal.setAttribute("aria-hidden", "true");
   lockBody(false);
 }
 
-function openOrderModal(product) {
-  pendingProduct = product;
-  const qty = getQty(product.id);
-  const size = getSize(product.id);
-  const unit = productUnitPrice(product, size);
-  $("modal-title").textContent = product.name;
-  $("modal-meta").textContent = `Size ${sizeLabel(size)} · ${qty} phần · ${vnd.format(unit * qty)}`;
-  $("customer-name").value = "";
-  $("customer-phone").value = "";
-  $("order-note").value = "";
-  const trua = document.querySelector('input[name="delivery_slot"][value="trua"]');
-  if (trua instanceof HTMLInputElement) trua.checked = true;
-  orderModal.classList.remove("hidden");
-  orderModal.setAttribute("aria-hidden", "false");
-  lockBody(true);
-  requestAnimationFrame(() => $("customer-name").focus());
+function updateEditOrderLine(key, delta) {
+  const line = editOrderItems.find((l) => lineKey(l.id, l.size) === key);
+  if (!line) return;
+  line.qty += delta;
+  if (line.qty < 1) {
+    editOrderItems = editOrderItems.filter((l) => lineKey(l.id, l.size) !== key);
+  } else if (line.qty > 99) {
+    line.qty = 99;
+  }
+  renderEditOrderItems();
 }
 
-function closeOrderModal() {
-  pendingProduct = null;
-  orderModal.classList.add("hidden");
-  orderModal.setAttribute("aria-hidden", "true");
-  lockBody(false);
+function removeEditOrderLine(key) {
+  editOrderItems = editOrderItems.filter((l) => lineKey(l.id, l.size) !== key);
+  renderEditOrderItems();
 }
 
 function clearPreviewUrl() {
@@ -1113,25 +1299,6 @@ menuEl.addEventListener("click", (e) => {
     const id = deleteBtn.getAttribute("data-delete");
     const product = products.find((p) => p.id === id);
     if (product) openDeleteModal(product);
-    return;
-  }
-  const sizeBtn = t.closest("[data-size-for]");
-  if (sizeBtn) {
-    const id = sizeBtn.getAttribute("data-size-for");
-    const size = sizeBtn.getAttribute("data-size");
-    if (id && size) setSize(id, size);
-    return;
-  }
-  const el = t.closest("[data-plus],[data-minus],[data-add]");
-  if (!(el instanceof HTMLElement)) return;
-  const plus = el.getAttribute("data-plus");
-  const minus = el.getAttribute("data-minus");
-  const add = el.getAttribute("data-add");
-  if (plus) setQty(plus, getQty(plus) + 1);
-  if (minus) setQty(minus, getQty(minus) - 1);
-  if (add) {
-    const product = products.find((p) => p.id === add);
-    if (product) openOrderModal(product);
   }
 });
 
@@ -1171,52 +1338,42 @@ document.addEventListener("keydown", (e) => {
   else if (!orderModal.classList.contains("hidden")) closeOrderModal();
 });
 
-$("edit-order-minus").addEventListener("click", () => {
-  editOrderQty = Math.max(1, editOrderQty - 1);
-  refreshEditOrderMeta();
-});
-
-$("edit-order-plus").addEventListener("click", () => {
-  editOrderQty = Math.min(99, editOrderQty + 1);
-  refreshEditOrderMeta();
-});
-
-editOrderModal?.addEventListener("change", (e) => {
+$("edit-order-items")?.addEventListener("click", (e) => {
   const t = e.target;
-  if (!(t instanceof HTMLInputElement) || t.name !== "edit_order_size") return;
-  editOrderSize = normalizeSize(t.value);
-  refreshEditOrderMeta();
+  if (!(t instanceof Element)) return;
+  const minus = t.closest("[data-edit-minus]")?.getAttribute("data-edit-minus");
+  const plus = t.closest("[data-edit-plus]")?.getAttribute("data-edit-plus");
+  const remove = t.closest("[data-edit-remove]")?.getAttribute("data-edit-remove");
+  if (minus) updateEditOrderLine(minus, -1);
+  else if (plus) updateEditOrderLine(plus, 1);
+  else if (remove) removeEditOrderLine(remove);
 });
 
 $("edit-order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!editingOrder?.items?.[0]) return;
-  const item = editingOrder.items[0];
+  if (!editingOrder) return;
+  if (!editOrderItems.length) {
+    toast("Đơn phải còn ít nhất 1 món");
+    return;
+  }
   const delivery_slot = selectedDeliverySlot("edit_delivery_slot");
   if (delivery_slot !== "trua" && delivery_slot !== "chieu") {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
-  const size = normalizeSize(selectedDeliverySlot("edit_order_size") || editOrderSize);
-  const catalog = products.find((p) => p.id === item.id);
-  const price = catalog
-    ? productUnitPrice(catalog, size)
-    : Number(item.price) || 0;
   saveEditOrderBtn.disabled = true;
   try {
     await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
       method: "PUT",
       body: JSON.stringify({
-        items: [
-          {
-            id: item.id,
-            name: item.name,
-            price,
-            size,
-            image: item.image || resolveItemImage(item),
-            qty: editOrderQty,
-          },
-        ],
+        items: editOrderItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          size: normalizeSize(item.size),
+          image: item.image || resolveItemImage(item),
+          qty: item.qty,
+        })),
         delivery_slot,
         customer: $("edit-order-customer").value.trim(),
         phone: $("edit-order-phone").value.trim(),
@@ -1225,7 +1382,7 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     });
     closeEditOrderModal();
     toast("Đã cập nhật đơn");
-    await loadOrders();
+    await Promise.all([loadOrders(), loadProducts()]);
   } catch (err) {
     toast(err.message || "Không lưu được");
   } finally {
@@ -1265,49 +1422,93 @@ editImageInput.addEventListener("change", () => {
   editPreview.src = previewObjectUrl;
 });
 
+$("open-create-order")?.addEventListener("click", () => {
+  openCreateOrder();
+});
+
+$("cart-clear")?.addEventListener("click", () => {
+  clearCart();
+  toast("Đã xóa món trong đơn");
+});
+
+orderCartLinesEl?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const minus = t.closest("[data-cart-minus]")?.getAttribute("data-cart-minus");
+  const plus = t.closest("[data-cart-plus]")?.getAttribute("data-cart-plus");
+  const remove = t.closest("[data-cart-remove]")?.getAttribute("data-cart-remove");
+  if (minus) updateCartLine(minus, -1);
+  else if (plus) updateCartLine(plus, 1);
+  else if (remove) removeCartLine(remove);
+});
+
+orderMenuEl?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const sizeBtn = t.closest("[data-size-for]");
+  if (sizeBtn) {
+    const id = sizeBtn.getAttribute("data-size-for");
+    const size = sizeBtn.getAttribute("data-size");
+    if (id && size) setSize(id, size);
+    return;
+  }
+  const el = t.closest("[data-plus],[data-minus],[data-add]");
+  if (!(el instanceof HTMLElement)) return;
+  const plus = el.getAttribute("data-plus");
+  const minus = el.getAttribute("data-minus");
+  const add = el.getAttribute("data-add");
+  if (plus) setQty(plus, getQty(plus) + 1);
+  if (minus) setQty(minus, getQty(minus) - 1);
+  if (add) {
+    const product = products.find((p) => p.id === add);
+    if (product) addToCart(product);
+  }
+});
+
 $("order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!pendingProduct) return;
-
-  const product = pendingProduct;
-  const qty = getQty(product.id);
-  const size = getSize(product.id);
-  const price = productUnitPrice(product, size);
+  if (!cart.length) {
+    toast("Chưa thêm món vào đơn");
+    return;
+  }
   const delivery_slot = selectedDeliverySlot();
   if (delivery_slot !== "trua" && delivery_slot !== "chieu") {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const items = cart.map((line) => ({
+    id: line.id,
+    name: line.name,
+    price: line.price,
+    size: line.size,
+    image: line.image,
+    qty: line.qty,
+  }));
+  const label = saveBtn.querySelector(".btn-label");
   saveBtn.disabled = true;
+  saveBtn.classList.add("is-busy");
+  if (label) label.textContent = "Đang tạo...";
   try {
     await api("/api/orders", {
       method: "POST",
       body: JSON.stringify({
-        items: [
-          {
-            id: product.id,
-            name: product.name,
-            price,
-            size,
-            image: product.image,
-            qty,
-          },
-        ],
+        items,
         delivery_slot,
         customer: $("customer-name").value.trim(),
         phone: $("customer-phone").value.trim(),
         note: $("order-note").value.trim(),
       }),
     });
-    setQty(product.id, 1);
-    setSize(product.id, "nho");
+    cart = [];
     closeOrderModal();
-    toast("Đã lưu đơn");
-    await loadOrders();
+    toast("Đã tạo đơn");
+    await Promise.all([loadOrders(), loadProducts()]);
   } catch (err) {
-    toast(err.message || "Không lưu được");
+    toast(err.message || "Không tạo được đơn");
   } finally {
     saveBtn.disabled = false;
+    saveBtn.classList.remove("is-busy");
+    updateComposeMeta();
   }
 });
 

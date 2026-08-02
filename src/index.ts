@@ -6,6 +6,7 @@ import {
   nowMs,
   parseDateRangeKey,
   rangeVn,
+  todayRangeVn,
   type OrderItem,
 } from "./db";
 import { getProduct, listProducts } from "./products";
@@ -33,7 +34,32 @@ app.get("/api/products", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const products = await listProducts(db);
-  return c.json({ products });
+  const { start, end } = todayRangeVn();
+  const soldRows = await db.execute({
+    sql: `SELECT items_json FROM orders WHERE created_at >= ? AND created_at < ?`,
+    args: [start, end],
+  });
+  const soldMap = new Map<string, number>();
+  for (const row of soldRows.rows) {
+    try {
+      const items = JSON.parse(String(row.items_json)) as OrderItem[];
+      for (const item of items) {
+        const id = String(item.id || "");
+        if (!id) continue;
+        const qty = Math.floor(Number(item.qty)) || 0;
+        if (qty < 1) continue;
+        soldMap.set(id, (soldMap.get(id) || 0) + qty);
+      }
+    } catch {
+      // skip bad row
+    }
+  }
+  return c.json({
+    products: products.map((p) => ({
+      ...p,
+      sold: soldMap.get(p.id) || 0,
+    })),
+  });
 });
 
 app.put("/api/products/:id", async (c) => {
