@@ -77,7 +77,16 @@ html.booting .tabbar {
 }
 
 .topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
+}
+
+.topbar-compact {
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 .topbar h1 {
@@ -98,6 +107,37 @@ html.booting .tabbar {
   flex-shrink: 0;
 }
 
+.icon-btn-refresh {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--accent-2);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.icon-btn-refresh svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.icon-btn-refresh:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.icon-btn-refresh.is-loading svg {
+  animation: refresh-spin 0.7s linear infinite;
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .product-list {
   display: grid;
   gap: 12px;
@@ -106,10 +146,13 @@ html.booting .tabbar {
 .product {
   position: relative;
   display: grid;
-  grid-template-columns: 76px 1fr;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
+  grid-template-columns: 92px 1fr;
+  grid-template-areas:
+    "img body"
+    "controls controls";
+  gap: 10px 12px;
+  align-items: stretch;
+  padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: var(--radius);
   background: var(--surface);
@@ -124,8 +167,9 @@ html.booting .tabbar {
 
 .product > img,
 .product-thumb {
-  width: 76px;
-  height: 76px;
+  grid-area: img;
+  width: 92px;
+  height: 92px;
   object-fit: cover;
   border-radius: 14px;
   background: var(--accent-soft);
@@ -137,7 +181,7 @@ html.booting .tabbar {
   top: 8px;
   right: 8px;
   display: flex;
-  gap: 6px;
+  gap: 0;
   z-index: 2;
   opacity: 0;
   transform: scale(0.9);
@@ -146,8 +190,8 @@ html.booting .tabbar {
 }
 
 .fab {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 0;
@@ -247,9 +291,11 @@ html.booting .tabbar {
 }
 
 .product-body {
+  grid-area: body;
   display: grid;
-  gap: 10px;
-  align-content: space-between;
+  gap: 4px;
+  align-content: center;
+  min-width: 0;
 }
 
 .product-body h3 {
@@ -259,15 +305,69 @@ html.booting .tabbar {
 }
 
 .product-body .price {
-  margin: 4px 0 0;
+  margin: 0;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
-.product-actions {
-  display: flex;
+.product-controls {
+  grid-area: controls;
+  display: grid;
+  gap: 8px;
+}
+
+.product-pick-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
-  justify-content: space-between;
+}
+
+.size-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #f1f6f3;
+  min-width: 0;
+}
+
+.size-seg button {
+  border: 0;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.size-seg button.active {
+  background: #fff;
+  color: var(--accent-2);
+  box-shadow: 0 1px 3px rgba(16, 35, 28, 0.1);
+}
+
+.size-seg button:active {
+  transform: scale(0.98);
+}
+
+.product-controls .btn.add {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 14px;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.95rem;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 
@@ -278,6 +378,7 @@ html.booting .tabbar {
   padding: 4px;
   border-radius: 999px;
   background: #f1f6f3;
+  flex-shrink: 0;
 }
 
 .qty button {
@@ -303,6 +404,19 @@ html.booting .tabbar {
   font-weight: 700;
 }
 
+.order-size {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  background: #eef3f0;
+  color: var(--accent-2);
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
 .btn {
   border: 0;
   border-radius: 999px;
@@ -324,6 +438,34 @@ html.booting .tabbar {
 .btn.primary {
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
   color: #fff;
+}
+
+.btn-busyable {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.btn-spinner {
+  display: none;
+  width: 1.05em;
+  height: 1.05em;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.btn.is-busy {
+  cursor: wait;
+  opacity: 0.92;
+}
+
+.btn.is-busy .btn-spinner {
+  display: inline-block;
+  animation: refresh-spin 0.7s linear infinite;
 }
 
 .btn.full {

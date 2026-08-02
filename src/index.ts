@@ -47,6 +47,8 @@ app.put("/api/products/:id", async (c) => {
   let name = existing.name;
   let price = existing.price;
   let cost = existing.cost;
+  let price_large = existing.price_large;
+  let cost_large = existing.cost_large;
   let image = existing.image;
   let file: File | null = null;
 
@@ -59,27 +61,65 @@ app.put("/api/products/:id", async (c) => {
     if (typeof body.cost === "string" || typeof body.cost === "number") {
       cost = Math.floor(Number(body.cost));
     }
+    if (
+      typeof body.price_large === "string" ||
+      typeof body.price_large === "number"
+    ) {
+      price_large = Math.floor(Number(body.price_large));
+    }
+    if (
+      typeof body.cost_large === "string" ||
+      typeof body.cost_large === "number"
+    ) {
+      cost_large = Math.floor(Number(body.cost_large));
+    }
     if (body.image instanceof File && body.image.size > 0) {
       file = body.image;
     }
   } else {
     const body = await c.req
-      .json<{ name?: string; price?: number; cost?: number }>()
+      .json<{
+        name?: string;
+        price?: number;
+        cost?: number;
+        price_large?: number;
+        cost_large?: number;
+      }>()
       .catch(() => null);
     if (!body) return c.json({ error: "Dữ liệu không hợp lệ" }, 400);
     if (typeof body.name === "string") name = body.name.trim();
     if (body.price !== undefined) price = Math.floor(Number(body.price));
     if (body.cost !== undefined) cost = Math.floor(Number(body.cost));
+    if (body.price_large !== undefined) {
+      price_large = Math.floor(Number(body.price_large));
+    }
+    if (body.cost_large !== undefined) {
+      cost_large = Math.floor(Number(body.cost_large));
+    }
   }
 
   if (!name || name.length > 120) {
     return c.json({ error: "Tên sản phẩm không hợp lệ" }, 400);
   }
   if (!Number.isFinite(price) || price < 0 || price > 50_000_000) {
-    return c.json({ error: "Giá không hợp lệ" }, 400);
+    return c.json({ error: "Giá size nhỏ không hợp lệ" }, 400);
   }
   if (!Number.isFinite(cost) || cost < 0 || cost > 50_000_000) {
-    return c.json({ error: "Giá vốn không hợp lệ" }, 400);
+    return c.json({ error: "Giá vốn size nhỏ không hợp lệ" }, 400);
+  }
+  if (
+    !Number.isFinite(price_large) ||
+    price_large < 0 ||
+    price_large > 50_000_000
+  ) {
+    return c.json({ error: "Giá size to không hợp lệ" }, 400);
+  }
+  if (
+    !Number.isFinite(cost_large) ||
+    cost_large < 0 ||
+    cost_large > 50_000_000
+  ) {
+    return c.json({ error: "Giá vốn size to không hợp lệ" }, 400);
   }
 
   if (file) {
@@ -103,8 +143,10 @@ app.put("/api/products/:id", async (c) => {
 
   const updated_at = Date.now();
   await db.execute({
-    sql: `UPDATE products SET name = ?, price = ?, cost = ?, image = ?, updated_at = ? WHERE id = ?`,
-    args: [name, price, cost, image, updated_at, id],
+    sql: `UPDATE products
+          SET name = ?, price = ?, cost = ?, price_large = ?, cost_large = ?, image = ?, updated_at = ?
+          WHERE id = ?`,
+    args: [name, price, cost, price_large, cost_large, image, updated_at, id],
   });
 
   return c.json({
@@ -113,6 +155,8 @@ app.put("/api/products/:id", async (c) => {
       name,
       price,
       cost,
+      price_large,
+      cost_large,
       image,
       sort_order: existing.sort_order,
       updated_at,
@@ -245,11 +289,13 @@ function parseOrderItems(rawItems: OrderItem[]): OrderItem[] | Response {
     }
     const image =
       typeof raw.image === "string" ? String(raw.image).trim().slice(0, 200) : "";
+    const size = raw.size === "to" ? "to" : "nho";
     items.push({
       id: String(raw.id).slice(0, 64),
       name: String(raw.name).slice(0, 120),
       qty,
       price,
+      size,
       ...(image && !image.includes("..") ? { image } : {}),
     });
   }

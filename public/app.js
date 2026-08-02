@@ -21,11 +21,13 @@ const editImageInput = $("edit-image");
 const editOrderQtyEl = $("edit-order-qty");
 const editOrderMeta = $("edit-order-meta");
 
-const PRODUCT_CACHE_KEY = "bt_products_v1";
+const PRODUCT_CACHE_KEY = "bt_products_v2";
 
 /** @type {Map<string, number>} */
 const qtyMap = new Map();
-/** @type {Array<{id:string,name:string,price:number,image:string,updated_at?:number}>} */
+/** @type {Map<string, 'nho'|'to'>} */
+const sizeMap = new Map();
+/** @type {Array<any>} */
 let products = [];
 /** @type {Array<any>} */
 let ordersCache = [];
@@ -39,15 +41,17 @@ let orderFilter = "pending";
 const statusBusy = new Set();
 /** @type {Set<string>} */
 const selectedOrderIds = new Set();
-/** @type {{id:string,name:string,price:number,image:string,updated_at?:number}|null} */
+/** @type {any} */
 let pendingProduct = null;
-/** @type {{id:string,name:string,price:number,image:string,updated_at?:number}|null} */
+/** @type {any} */
 let editingProduct = null;
-/** @type {{id:string,name:string,price:number,image:string,updated_at?:number}|null} */
+/** @type {any} */
 let deletingProduct = null;
 /** @type {any} */
 let editingOrder = null;
 let editOrderQty = 1;
+/** @type {'nho'|'to'} */
+let editOrderSize = "nho";
 /** @type {string[]} */
 let pendingDeleteOrderIds = [];
 /** @type {File|null} */
@@ -137,8 +141,47 @@ const STATS_RANGE_LABEL = {
   "30d": "30 ngày qua",
 };
 
+function normalizeSize(size) {
+  return size === "to" ? "to" : "nho";
+}
+
+function sizeLabel(size) {
+  return normalizeSize(size) === "to" ? "To" : "Nhỏ";
+}
+
+function getSize(id) {
+  return normalizeSize(sizeMap.get(id) || "nho");
+}
+
+function setSize(id, size) {
+  const next = normalizeSize(size);
+  sizeMap.set(id, next);
+  const card = menuEl.querySelector(`[data-product-id="${CSS.escape(id)}"]`);
+  if (!card) return;
+  card.querySelectorAll("[data-size]").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-size") === next);
+  });
+  const product = products.find((p) => p.id === id);
+  const priceEl = card.querySelector("[data-price]");
+  if (product && priceEl) {
+    priceEl.textContent = vnd.format(productUnitPrice(product, next));
+  }
+}
+
+function productUnitPrice(product, size) {
+  return normalizeSize(size) === "to"
+    ? Number(product.price_large ?? product.price) || 0
+    : Number(product.price) || 0;
+}
+
+function productUnitCost(product, size) {
+  return normalizeSize(size) === "to"
+    ? Number(product.cost_large ?? product.cost) || 0
+    : Number(product.cost) || 0;
+}
+
 function computeStats(list) {
-  const costMap = new Map(products.map((p) => [p.id, Number(p.cost) || 0]));
+  const productMap = new Map(products.map((p) => [p.id, p]));
   let revenue = 0;
   let revenueDone = 0;
   let profit = 0;
@@ -173,21 +216,24 @@ function computeStats(list) {
     for (const item of o.items || []) {
       const qty = Number(item.qty) || 0;
       const price = Number(item.price) || 0;
-      const cost = costMap.has(item.id)
-        ? Number(costMap.get(item.id))
+      const size = normalizeSize(item.size);
+      const catalog = productMap.get(item.id);
+      const cost = catalog
+        ? productUnitCost(catalog, size)
         : Math.round(price * 0.55);
       const lineRev = qty * price;
       const lineProfit = qty * (price - cost);
       profit += lineProfit;
       if (status === "done") profitDone += lineProfit;
-      const prev = byProduct.get(item.id) || {
-        name: item.name,
+      const key = `${item.id}:${size}`;
+      const prev = byProduct.get(key) || {
+        name: `${item.name} (${sizeLabel(size)})`,
         qty: 0,
         revenue: 0,
       };
       prev.qty += qty;
       prev.revenue += lineRev;
-      byProduct.set(item.id, prev);
+      byProduct.set(key, prev);
     }
   }
 
@@ -315,9 +361,13 @@ function renderMenu() {
   const frag = document.createDocumentFragment();
   for (const p of products) {
     if (!qtyMap.has(p.id)) qtyMap.set(p.id, 1);
+    if (!sizeMap.has(p.id)) sizeMap.set(p.id, "nho");
     const q = getQty(p.id);
+    const size = getSize(p.id);
+    const unit = productUnitPrice(p, size);
     const row = document.createElement("article");
     row.className = "product";
+    row.dataset.productId = p.id;
     row.innerHTML = `
       <div class="product-fabs">
         <button type="button" class="fab" data-edit="${escapeHtml(p.id)}" aria-label="Sửa ${escapeHtml(p.name)}">
@@ -327,20 +377,24 @@ function renderMenu() {
           ${DELETE_ICON}
         </button>
       </div>
-      <img class="product-thumb" src="${imageUrl(p)}" alt="" width="76" height="76" decoding="async" />
+      <img class="product-thumb" src="${imageUrl(p)}" alt="" width="92" height="92" decoding="async" />
       <div class="product-body">
-        <div>
-          <h3>${escapeHtml(p.name)}</h3>
-          <p class="price">${vnd.format(p.price)}</p>
-        </div>
-        <div class="product-actions">
+        <h3>${escapeHtml(p.name)}</h3>
+        <p class="price" data-price>${vnd.format(unit)}</p>
+      </div>
+      <div class="product-controls">
+        <div class="product-pick-row">
           <div class="qty">
             <button type="button" data-minus="${escapeHtml(p.id)}" aria-label="Giảm">−</button>
             <span data-qty="${escapeHtml(p.id)}">${q}</span>
             <button type="button" data-plus="${escapeHtml(p.id)}" aria-label="Tăng">+</button>
           </div>
-          <button type="button" class="btn primary add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm</span></button>
+          <div class="size-seg" role="group" aria-label="Chọn size">
+            <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="nho" class="${size === "nho" ? "active" : ""}">Nhỏ</button>
+            <button type="button" data-size-for="${escapeHtml(p.id)}" data-size="to" class="${size === "to" ? "active" : ""}">To</button>
+          </div>
         </div>
+        <button type="button" class="btn primary add" data-add="${escapeHtml(p.id)}">${PLUS_ICON}<span>Thêm đơn</span></button>
       </div>
     `;
     frag.appendChild(row);
@@ -475,7 +529,7 @@ function renderOrders(orders) {
     const linesHtml = o.items
       .map(
         (i) =>
-          `<span class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span></span>`,
+          `<span class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span><span class="order-size">${escapeHtml(sizeLabel(i.size))}</span></span>`,
       )
       .join("");
     const bits = [o.customer, o.phone, o.note].filter(Boolean);
@@ -663,7 +717,10 @@ function setTab(tab) {
   $("tab-stats")?.classList.toggle("hidden", tab !== "stats");
   viewTitle.textContent =
     tab === "products" ? "Sản phẩm" : tab === "orders" ? "Đơn hàng" : "Thống kê";
-  document.querySelector(".topbar")?.classList.toggle("hidden", tab === "orders");
+  const topbar = document.querySelector(".topbar");
+  const topbarText = document.querySelector(".topbar-text");
+  topbar?.classList.toggle("topbar-compact", tab === "orders");
+  topbarText?.classList.toggle("hidden", tab === "orders");
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-go") === tab);
   });
@@ -700,8 +757,12 @@ function setDeliverySlot(name, value) {
 function refreshEditOrderMeta() {
   if (!editingOrder?.items?.[0]) return;
   const item = editingOrder.items[0];
+  const catalog = products.find((p) => p.id === item.id);
+  const unit = catalog
+    ? productUnitPrice(catalog, editOrderSize)
+    : Number(item.price) || 0;
   editOrderQtyEl.textContent = String(editOrderQty);
-  editOrderMeta.textContent = `${editOrderQty} phần · ${vnd.format(item.price * editOrderQty)}`;
+  editOrderMeta.textContent = `Size ${sizeLabel(editOrderSize)} · ${editOrderQty} phần · ${vnd.format(unit * editOrderQty)}`;
 }
 
 function openEditOrderModal(order) {
@@ -712,6 +773,7 @@ function openEditOrderModal(order) {
     return;
   }
   editOrderQty = Math.max(1, Math.min(99, Number(item.qty) || 1));
+  editOrderSize = normalizeSize(item.size);
   $("edit-order-title").textContent = item.name;
   $("edit-order-product-name").textContent = item.name;
   const imgKey = resolveItemImage(item);
@@ -719,6 +781,7 @@ function openEditOrderModal(order) {
   $("edit-order-customer").value = order.customer || "";
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
+  setDeliverySlot("edit_order_size", editOrderSize);
   setDeliverySlot(
     "edit_delivery_slot",
     order.delivery_slot === "chieu" ? "chieu" : "trua",
@@ -740,8 +803,10 @@ function closeEditOrderModal() {
 function openOrderModal(product) {
   pendingProduct = product;
   const qty = getQty(product.id);
+  const size = getSize(product.id);
+  const unit = productUnitPrice(product, size);
   $("modal-title").textContent = product.name;
-  $("modal-meta").textContent = `${qty} phần · ${vnd.format(product.price * qty)}`;
+  $("modal-meta").textContent = `Size ${sizeLabel(size)} · ${qty} phần · ${vnd.format(unit * qty)}`;
   $("customer-name").value = "";
   $("customer-phone").value = "";
   $("order-note").value = "";
@@ -776,6 +841,12 @@ function openEditModal(product) {
   $("edit-name").value = product.name;
   $("edit-price").value = String(product.price);
   $("edit-cost").value = String(product.cost ?? 0);
+  $("edit-price-large").value = String(
+    product.price_large ?? product.price + 5000,
+  );
+  $("edit-cost-large").value = String(
+    product.cost_large ?? Math.max(0, (product.cost ?? 0) + 2000),
+  );
   editPreview.src = imageUrl(product);
   editModal.classList.remove("hidden");
   editModal.setAttribute("aria-hidden", "false");
@@ -795,7 +866,7 @@ function closeEditModal() {
 function openDeleteModal(product) {
   deletingProduct = product;
   $("delete-title").textContent = product.name;
-  $("delete-meta").textContent = vnd.format(product.price);
+  $("delete-meta").textContent = `Nhỏ ${vnd.format(product.price)} · To ${vnd.format(product.price_large ?? product.price)}`;
   deleteModal.classList.remove("hidden");
   deleteModal.setAttribute("aria-hidden", "false");
   lockBody(true);
@@ -889,9 +960,41 @@ async function enterApp() {
   loadOrders().catch(() => {});
 }
 
+async function refreshData() {
+  const btn = $("refresh");
+  if (btn?.disabled) return;
+  const tab =
+    document.querySelector(".tab.active")?.getAttribute("data-go") || "products";
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("is-loading");
+  }
+  try {
+    if (tab === "stats") {
+      await Promise.all([loadProducts(), loadStats()]);
+    } else if (tab === "orders") {
+      await Promise.all([loadOrders(), loadProducts()]);
+    } else {
+      await Promise.all([loadProducts(), loadOrders()]);
+    }
+    toast("Đã cập nhật");
+  } catch (err) {
+    toast(err.message || "Không tải được");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-loading");
+    }
+  }
+}
+
 function boot() {
   return enterApp();
 }
+
+$("refresh")?.addEventListener("click", () => {
+  refreshData();
+});
 
 document.querySelector(".tabbar").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-go]");
@@ -1012,6 +1115,13 @@ menuEl.addEventListener("click", (e) => {
     if (product) openDeleteModal(product);
     return;
   }
+  const sizeBtn = t.closest("[data-size-for]");
+  if (sizeBtn) {
+    const id = sizeBtn.getAttribute("data-size-for");
+    const size = sizeBtn.getAttribute("data-size");
+    if (id && size) setSize(id, size);
+    return;
+  }
   const el = t.closest("[data-plus],[data-minus],[data-add]");
   if (!(el instanceof HTMLElement)) return;
   const plus = el.getAttribute("data-plus");
@@ -1071,6 +1181,13 @@ $("edit-order-plus").addEventListener("click", () => {
   refreshEditOrderMeta();
 });
 
+editOrderModal?.addEventListener("change", (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || t.name !== "edit_order_size") return;
+  editOrderSize = normalizeSize(t.value);
+  refreshEditOrderMeta();
+});
+
 $("edit-order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!editingOrder?.items?.[0]) return;
@@ -1080,6 +1197,11 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const size = normalizeSize(selectedDeliverySlot("edit_order_size") || editOrderSize);
+  const catalog = products.find((p) => p.id === item.id);
+  const price = catalog
+    ? productUnitPrice(catalog, size)
+    : Number(item.price) || 0;
   saveEditOrderBtn.disabled = true;
   try {
     await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
@@ -1089,7 +1211,8 @@ $("edit-order-form").addEventListener("submit", async (e) => {
           {
             id: item.id,
             name: item.name,
-            price: item.price,
+            price,
+            size,
             image: item.image || resolveItemImage(item),
             qty: editOrderQty,
           },
@@ -1118,6 +1241,7 @@ confirmDeleteBtn.addEventListener("click", async () => {
     await api(`/api/products/${encodeURIComponent(id)}`, { method: "DELETE" });
     setProducts(products.filter((p) => p.id !== id));
     qtyMap.delete(id);
+    sizeMap.delete(id);
     closeDeleteModal();
     toast("Đã xóa sản phẩm");
   } catch (err) {
@@ -1147,6 +1271,8 @@ $("order-form").addEventListener("submit", async (e) => {
 
   const product = pendingProduct;
   const qty = getQty(product.id);
+  const size = getSize(product.id);
+  const price = productUnitPrice(product, size);
   const delivery_slot = selectedDeliverySlot();
   if (delivery_slot !== "trua" && delivery_slot !== "chieu") {
     toast("Chọn giao trưa hoặc giao chiều");
@@ -1161,7 +1287,8 @@ $("order-form").addEventListener("submit", async (e) => {
           {
             id: product.id,
             name: product.name,
-            price: product.price,
+            price,
+            size,
             image: product.image,
             qty,
           },
@@ -1173,6 +1300,7 @@ $("order-form").addEventListener("submit", async (e) => {
       }),
     });
     setQty(product.id, 1);
+    setSize(product.id, "nho");
     closeOrderModal();
     toast("Đã lưu đơn");
     await loadOrders();
@@ -1191,12 +1319,18 @@ $("edit-form").addEventListener("submit", async (e) => {
   const name = $("edit-name").value.trim();
   const price = Math.floor(Number($("edit-price").value));
   const cost = Math.floor(Number($("edit-cost").value));
+  const price_large = Math.floor(Number($("edit-price-large").value));
+  const cost_large = Math.floor(Number($("edit-cost-large").value));
   if (
     !name ||
     !Number.isFinite(price) ||
     price < 0 ||
     !Number.isFinite(cost) ||
-    cost < 0
+    cost < 0 ||
+    !Number.isFinite(price_large) ||
+    price_large < 0 ||
+    !Number.isFinite(cost_large) ||
+    cost_large < 0
   ) {
     toast("Thông tin chưa hợp lệ");
     return;
@@ -1206,9 +1340,15 @@ $("edit-form").addEventListener("submit", async (e) => {
   form.set("name", name);
   form.set("price", String(price));
   form.set("cost", String(cost));
+  form.set("price_large", String(price_large));
+  form.set("cost_large", String(cost_large));
   if (pendingImageFile) form.set("image", pendingImageFile);
 
+  const label = saveProductBtn.querySelector(".btn-label");
+  const idleLabel = label?.textContent || "Lưu sản phẩm";
   saveProductBtn.disabled = true;
+  saveProductBtn.classList.add("is-busy");
+  if (label) label.textContent = "Đang lưu...";
   try {
     const data = await api(`/api/products/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -1222,6 +1362,8 @@ $("edit-form").addEventListener("submit", async (e) => {
     toast(err.message || "Không lưu được");
   } finally {
     saveProductBtn.disabled = false;
+    saveProductBtn.classList.remove("is-busy");
+    if (label) label.textContent = idleLabel;
   }
 });
 

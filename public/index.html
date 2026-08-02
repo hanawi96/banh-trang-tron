@@ -21,10 +21,15 @@
   <body>
     <main id="app" class="hidden">
       <header class="topbar">
-        <div>
+        <div class="topbar-text">
           <p class="brand-mark">Bánh tráng trộn</p>
           <h1 id="view-title">Sản phẩm</h1>
         </div>
+        <button type="button" class="icon-btn icon-btn-refresh" id="refresh" aria-label="Tải lại dữ liệu" title="Tải lại">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+          </svg>
+        </button>
       </header>
 
       <section id="tab-products" class="tab-panel" data-tab="products">
@@ -197,6 +202,19 @@
             </div>
           </div>
           <fieldset class="slot-field">
+            <legend>Size</legend>
+            <div class="slot-options" role="radiogroup" aria-label="Size">
+              <label class="slot-option">
+                <input type="radio" name="edit_order_size" value="nho" checked />
+                <span>Nhỏ</span>
+              </label>
+              <label class="slot-option">
+                <input type="radio" name="edit_order_size" value="to" />
+                <span>To</span>
+              </label>
+            </div>
+          </fieldset>
+          <fieldset class="slot-field">
             <legend>Thời gian giao</legend>
             <div class="slot-options" role="radiogroup" aria-label="Thời gian giao">
               <label class="slot-option">
@@ -281,32 +299,59 @@
               required
             />
           </label>
-          <label class="field">
-            <span>Giá bán (VND)</span>
-            <input
-              id="edit-price"
-              name="price"
-              type="number"
-              inputmode="numeric"
-              min="0"
-              step="1000"
-              required
-            />
-          </label>
-          <label class="field">
-            <span>Giá vốn (VND)</span>
-            <input
-              id="edit-cost"
-              name="cost"
-              type="number"
-              inputmode="numeric"
-              min="0"
-              step="1000"
-              required
-            />
-          </label>
-          <button class="btn primary full" type="submit" id="save-product">
-            Lưu sản phẩm
+          <div class="field-grid">
+            <label class="field">
+              <span>Giá bán · Nhỏ</span>
+              <input
+                id="edit-price"
+                name="price"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="1000"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Giá bán · To</span>
+              <input
+                id="edit-price-large"
+                name="price_large"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="1000"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Giá vốn · Nhỏ</span>
+              <input
+                id="edit-cost"
+                name="cost"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="1000"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Giá vốn · To</span>
+              <input
+                id="edit-cost-large"
+                name="cost_large"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                step="1000"
+                required
+              />
+            </label>
+          </div>
+          <button class="btn primary full btn-busyable" type="submit" id="save-product">
+            <span class="btn-spinner" aria-hidden="true"></span>
+            <span class="btn-label">Lưu sản phẩm</span>
           </button>
         </form>
       </div>

@@ -49,6 +49,8 @@ export async function ensureSchema(db: Client): Promise<void> {
       name TEXT NOT NULL,
       price INTEGER NOT NULL,
       cost INTEGER NOT NULL DEFAULT 0,
+      price_large INTEGER NOT NULL DEFAULT 0,
+      cost_large INTEGER NOT NULL DEFAULT 0,
       image TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
@@ -57,11 +59,14 @@ export async function ensureSchema(db: Client): Promise<void> {
   ready = true;
 }
 
+export type OrderSize = "nho" | "to";
+
 export type OrderItem = {
   id: string;
   name: string;
   qty: number;
   price: number;
+  size?: OrderSize;
   image?: string;
 };
 
