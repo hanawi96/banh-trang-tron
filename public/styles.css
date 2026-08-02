@@ -738,6 +738,34 @@ html.booting .tabbar {
   min-height: 84px;
 }
 
+.optional-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.optional-actions.hidden {
+  display: none;
+}
+
+.optional-actions .btn.optional-add {
+  flex: 1;
+}
+
+.btn.optional-add {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: #fff;
+  color: var(--accent-2);
+  border: 1px dashed #b7dbc9;
+}
+
+.btn.optional-add:active {
+  background: var(--accent-soft);
+}
+
 /* Orders */
 .orders-head {
   display: flex;
@@ -839,7 +867,7 @@ body.bulk-open .tabbar {
 
 .order-bulk-actions {
   display: grid;
-  grid-template-columns: 1fr 1.15fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
@@ -1237,6 +1265,29 @@ body.bulk-open .tabbar {
   margin: 28px 0;
   text-align: center;
   color: var(--muted);
+}
+
+.loading-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: 36px 0;
+  color: var(--muted);
+}
+
+.loading-state p {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid rgba(12, 122, 82, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: refresh-spin 0.7s linear infinite;
 }
 
 .home-cta {

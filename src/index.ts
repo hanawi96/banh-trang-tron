@@ -11,7 +11,6 @@ import {
   rangeVn,
   todayRangeVn,
   upcomingDeliveryYmdRange,
-  vnYmd,
   type OrderItem,
 } from "./db";
 import { getProduct, listProducts } from "./products";
@@ -194,49 +193,59 @@ app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
-  // By delivery day (VN). Legacy rows without delivery_date use created_at.
-  // `upcoming` = home board (today → last day in the date-picker window).
-  let startYmd: string;
-  let endYmdExclusive: string;
-  let createdStart: number;
-  let createdEnd: number;
-  if (rangeKey === "upcoming") {
-    ({ startYmd, endYmdExclusive } = upcomingDeliveryYmdRange());
-    ({ start: createdStart, end: createdEnd } = todayRangeVn());
-  } else {
-    const { start, end } = rangeVn(rangeKey);
-    startYmd = vnYmd(start);
-    endYmdExclusive = vnYmd(end);
-    createdStart = start;
-    createdEnd = end;
-  }
+  // `upcoming` = home board by delivery day (today → last picker day).
+  // Stats ranges (today/yesterday/7d/30d) = by created_at (orders taken that day).
   const limit =
     rangeKey === "today" ||
     rangeKey === "yesterday" ||
     rangeKey === "upcoming"
       ? 200
       : 2000;
-  const result = await db.execute({
-    sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
-          FROM orders
-          WHERE
-            (delivery_date >= ? AND delivery_date < ?)
-            OR (
-              (delivery_date IS NULL OR delivery_date = '')
-              AND created_at >= ? AND created_at < ?
-            )
-          ORDER BY
-            CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
-            delivery_date ASC,
-            CASE delivery_slot
-              WHEN 'trua' THEN 0
-              WHEN 'chieu' THEN 1
-              ELSE 2
-            END ASC,
-            created_at ASC
-          LIMIT ?`,
-    args: [startYmd, endYmdExclusive, createdStart, createdEnd, limit],
-  });
+
+  let result;
+  if (rangeKey === "upcoming") {
+    const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
+    const { start: createdStart, end: createdEnd } = todayRangeVn();
+    result = await db.execute({
+      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
+            FROM orders
+            WHERE
+              (delivery_date >= ? AND delivery_date < ?)
+              OR (
+                (delivery_date IS NULL OR delivery_date = '')
+                AND created_at >= ? AND created_at < ?
+              )
+            ORDER BY
+              CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
+              delivery_date ASC,
+              CASE delivery_slot
+                WHEN 'trua' THEN 0
+                WHEN 'chieu' THEN 1
+                ELSE 2
+              END ASC,
+              created_at ASC
+            LIMIT ?`,
+      args: [startYmd, endYmdExclusive, createdStart, createdEnd, limit],
+    });
+  } else {
+    const { start, end } = rangeVn(rangeKey);
+    result = await db.execute({
+      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+            ORDER BY
+              CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
+              delivery_date ASC,
+              CASE delivery_slot
+                WHEN 'trua' THEN 0
+                WHEN 'chieu' THEN 1
+                ELSE 2
+              END ASC,
+              created_at ASC
+            LIMIT ?`,
+      args: [start, end, limit],
+    });
+  }
 
   const orders = result.rows.map((row) => ({
     id: String(row.id),
@@ -273,8 +282,6 @@ app.get("/api/orders", async (c) => {
   return c.json({
     orders: ordersWithCount,
     range: rangeKey,
-    startYmd,
-    endYmdExclusive,
     tz: "Asia/Ho_Chi_Minh",
   });
 });

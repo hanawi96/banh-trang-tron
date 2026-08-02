@@ -361,7 +361,7 @@ function renderStats() {
     : `<p class="empty">Chưa có dữ liệu món.</p>`;
 
   root.innerHTML = `
-    <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao · giờ VN</p>
+    <p class="stats-kicker">${escapeHtml(label)} · theo ngày nhận đơn · giờ VN</p>
     <div class="stats-hero">
       <article class="stats-card stats-card-lg">
         <span>Doanh thu</span>
@@ -574,13 +574,15 @@ function updateComposeMeta() {
 
 function renderCartLines() {
   if (!orderCartLinesEl) return;
+  const section = $("order-cart-section");
   if (!cart.length) {
-    orderCartLinesEl.innerHTML =
-      `<p class="empty compose-empty">Chưa thêm món — chọn bên dưới.</p>`;
+    orderCartLinesEl.replaceChildren();
+    section?.classList.add("hidden");
     updateComposeMeta();
     return;
   }
-  orderCartLinesEl.closest(".compose-section")?.classList.remove("is-invalid");
+  section?.classList.remove("hidden");
+  section?.classList.remove("is-invalid");
   const frag = document.createDocumentFragment();
   for (const line of cart) frag.appendChild(renderLineRow(line, { prefix: "cart" }));
   orderCartLinesEl.replaceChildren(frag);
@@ -657,13 +659,43 @@ function clearComposeInvalid(root = orderModal) {
   root?.querySelectorAll(".is-invalid").forEach((n) => n.classList.remove("is-invalid"));
 }
 
+function resetOrderOptionalFields() {
+  const phoneField = $("order-phone-field");
+  const noteField = $("order-note-field");
+  const actions = $("order-optional-actions");
+  const phoneBtn = $("show-order-phone");
+  const noteBtn = $("show-order-note");
+  if ($("customer-phone")) $("customer-phone").value = "";
+  if ($("order-note")) $("order-note").value = "";
+  phoneField?.classList.add("hidden");
+  noteField?.classList.add("hidden");
+  phoneBtn?.classList.remove("hidden");
+  noteBtn?.classList.remove("hidden");
+  actions?.classList.remove("hidden");
+}
+
+function revealOrderOptionalField(kind) {
+  const actions = $("order-optional-actions");
+  if (kind === "phone") {
+    $("order-phone-field")?.classList.remove("hidden");
+    $("show-order-phone")?.classList.add("hidden");
+    requestAnimationFrame(() => $("customer-phone")?.focus());
+  } else if (kind === "note") {
+    $("order-note-field")?.classList.remove("hidden");
+    $("show-order-note")?.classList.add("hidden");
+    requestAnimationFrame(() => $("order-note")?.focus());
+  }
+  const phoneHidden = $("show-order-phone")?.classList.contains("hidden");
+  const noteHidden = $("show-order-note")?.classList.contains("hidden");
+  if (phoneHidden && noteHidden) actions?.classList.add("hidden");
+}
+
 function openCreateOrder() {
   cart = [];
   clearComposeInvalid(orderModal);
   $("modal-title").textContent = "Thêm đơn hàng";
   $("customer-name").value = "";
-  $("customer-phone").value = "";
-  $("order-note").value = "";
+  resetOrderOptionalFields();
   renderDeliveryDateOptions(
     "delivery-date-options",
     "delivery_date",
@@ -689,6 +721,8 @@ function setProducts(list, { render = true, cache = true } = {}) {
   products = list;
   if (cache) writeProductCache(list);
   if (render) renderMenu();
+  // Order thumbs prefer live catalog images — refresh when products change
+  if (ordersCache.length) renderOrders(ordersCache);
 }
 
 /** Sold for delivery-today — from board cache filtered by today's YMD */
@@ -713,10 +747,19 @@ function soldTodayByProductId() {
   return map;
 }
 
+/** Prefer current product catalog image so order thumbs follow avatar updates */
 function resolveItemImage(item) {
-  if (item.image) return item.image;
   const p = products.find((x) => x.id === item.id);
-  return p?.image || "";
+  if (p?.image) return p.image;
+  return item.image || "";
+}
+
+function itemImageUrl(item) {
+  const p = products.find((x) => x.id === item.id);
+  const path = imagesPath(resolveItemImage(item));
+  if (!path) return "";
+  const bust = p?.updated_at ? `?v=${p.updated_at}` : "";
+  return `${path}${bust}`;
 }
 
 function normalizeStatus(status) {
@@ -749,6 +792,141 @@ function updateBulkBar() {
   countEl.textContent = String(n);
   selectAllBtn.textContent =
     n > 0 && n === pendingIds.length ? "Bỏ chọn" : "Chọn tất cả";
+}
+
+/** A6 slip HTML for one order — print via browser → Save as PDF */
+function buildOrderSlipHtml(order, index, total) {
+  const customer = (order.customer || "").trim() || "Khách";
+  const phone = (order.phone || "").trim();
+  const note = (order.note || "").trim();
+  const slot = order.delivery_slot === "chieu" ? "chieu" : order.delivery_slot === "trua" ? "trua" : "";
+  const when = [deliveryDateLabel(order.delivery_date || ""), slotLabel(slot)]
+    .filter(Boolean)
+    .join(" · ");
+  const code = String(order.id || "").slice(0, 8).toUpperCase();
+  const created = order.created_at
+    ? timeFmt.format(order.created_at)
+    : "";
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemsHtml = items.length
+    ? items
+        .map((i) => {
+          const qty = Math.max(1, Number(i.qty) || 1);
+          const size = sizeLabel(i.size);
+          const name = escapeHtml(i.name || "Món");
+          const sizeBit = size
+            ? `<span class="sz">${escapeHtml(size)}</span>`
+            : "";
+          return `<li><span class="qty">${qty}×</span><span class="nm">${name}</span>${sizeBit}</li>`;
+        })
+        .join("")
+    : `<li class="empty-line">Chưa có món</li>`;
+  const dense = items.length >= 6 ? " slip-dense" : "";
+
+  return `<article class="slip${dense}">
+  <header class="slip-head">
+    <div class="slip-brand">Bánh tráng trộn</div>
+    <div class="slip-meta">
+      <span>#${escapeHtml(code)}</span>
+      ${created ? `<span>${escapeHtml(created)}</span>` : ""}
+      <span>${index + 1}/${total}</span>
+    </div>
+  </header>
+  <div class="slip-when">${when ? escapeHtml(when) : "Chưa chọn giao"}</div>
+  <div class="slip-customer">
+    <div class="slip-name">${escapeHtml(customer)}</div>
+    ${phone ? `<div class="slip-phone">${escapeHtml(phone)}</div>` : ""}
+  </div>
+  <ul class="slip-items">${itemsHtml}</ul>
+  ${note ? `<div class="slip-note"><span>Lưu ý</span>${escapeHtml(note)}</div>` : ""}
+  <footer class="slip-foot">
+    <span>Tổng</span>
+    <strong>${escapeHtml(formatVnd(order.total))}</strong>
+  </footer>
+</article>`;
+}
+
+const A6_PRINT_CSS = `@page{size:A6 portrait;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:105mm;background:#fff;color:#111;
+font-family:"Segoe UI","Roboto","Helvetica Neue",Arial,sans-serif;
+-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.slip{
+width:105mm;height:148mm;padding:7.5mm 7mm 6.5mm;
+display:flex;flex-direction:column;gap:3.2mm;overflow:hidden
+}
+.slip+.slip{break-before:page;page-break-before:always}
+.slip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:3mm}
+.slip-brand{font-size:11pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.slip-meta{text-align:right;font-size:7.5pt;color:#444;line-height:1.35;white-space:nowrap}
+.slip-when{
+font-size:10pt;font-weight:700;text-align:center;
+padding:2.2mm 3mm;border:1.2pt solid #111;border-radius:1.5mm;
+letter-spacing:.01em}
+.slip-customer{text-align:center;padding:0 1mm}
+.slip-name{font-size:14pt;font-weight:800;letter-spacing:-.02em;line-height:1.2;word-break:break-word}
+.slip-phone{margin-top:1mm;font-size:10pt;font-weight:600;color:#222}
+.slip-items{
+flex:1;list-style:none;border-top:1pt dashed #999;border-bottom:1pt dashed #999;
+padding:2.5mm 0;display:flex;flex-direction:column;justify-content:center;gap:1.6mm;
+min-height:0;overflow:hidden
+}
+.slip-items li{display:flex;align-items:baseline;gap:2mm;font-size:10.5pt;line-height:1.25}
+.slip-items .qty{font-weight:800;min-width:8mm;flex:0 0 auto}
+.slip-items .nm{flex:1;font-weight:600;min-width:0;word-break:break-word}
+.slip-items .sz{flex:0 0 auto;font-size:8.5pt;font-weight:700;color:#333;white-space:nowrap}
+.slip-items .empty-line{color:#666;font-size:9.5pt;justify-content:center}
+.slip-note{font-size:9pt;line-height:1.3;padding:1.5mm 2mm;background:#f3f3f3;border-radius:1.2mm}
+.slip-note span{display:block;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.6mm}
+.slip-foot{
+display:flex;align-items:baseline;justify-content:space-between;gap:3mm;
+padding-top:1mm;font-size:10pt
+}
+.slip-foot strong{font-size:13pt;font-weight:800;letter-spacing:-.02em}
+.slip-dense .slip-name{font-size:12pt}
+.slip-dense .slip-items{gap:1mm}
+.slip-dense .slip-items li{font-size:9pt}
+.slip-dense .slip-items .sz{font-size:7.5pt}
+@media screen{
+body{margin:12px auto;box-shadow:0 0 0 1px #ddd}
+.slip{outline:1px dashed #ccc;margin:0 auto 12px}
+}`;
+
+function exportOrdersPdfA6(ids) {
+  const idSet = new Set(ids);
+  const list = ordersCache.filter((o) => idSet.has(o.id));
+  if (!list.length) {
+    toast("Không tìm thấy đơn đã chọn");
+    return;
+  }
+
+  const slips = list
+    .map((o, i) => buildOrderSlipHtml(o, i, list.length))
+    .join("\n");
+  const html = `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/>
+<title>Phiếu giao A6 (${list.length} đơn)</title>
+<style>${A6_PRINT_CSS}</style>
+<script>
+window.addEventListener("load",function(){
+  setTimeout(function(){window.focus();window.print();},50);
+});
+<\/script>
+</head><body>${slips}</body></html>`;
+
+  // New tab from user click — reliable print / Save as PDF with A6 page size
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast("Trình duyệt chặn cửa sổ in — cho phép popup rồi thử lại");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  toast(
+    list.length > 1
+      ? `${list.length} phiếu A6 — chọn máy in hoặc Save as PDF`
+      : "Phiếu A6 — chọn máy in hoặc Save as PDF",
+  );
 }
 
 function updateOrderFilterCounts() {
@@ -852,7 +1030,7 @@ function renderOrders(orders) {
     const itemsHtml = (o.items || [])
       .map((i, idx) => {
         const sizeText = sizeLabel(i.size);
-        const imgSrc = imagesPath(resolveItemImage(i));
+        const imgSrc = itemImageUrl(i);
         const thumb = imgSrc
           ? `<img class="order-item-thumb" src="${imgSrc}" alt="" width="48" height="48" decoding="async" loading="lazy" />`
           : `<div class="order-item-thumb order-item-thumb-empty" aria-hidden="true"></div>`;
@@ -1496,9 +1674,16 @@ function syncStatsRangeButtons() {
   });
 }
 
+function statsLoadingHtml() {
+  return `<div class="loading-state" role="status" aria-live="polite">
+    <span class="loading-spinner" aria-hidden="true"></span>
+    <p>Đang tải thống kê...</p>
+  </div>`;
+}
+
 async function loadStats() {
   const root = $("stats");
-  if (root) root.innerHTML = `<p class="empty">Đang tải thống kê...</p>`;
+  if (root) root.innerHTML = statsLoadingHtml();
   syncStatsRangeButtons();
   const data = await api(`/api/orders?range=${encodeURIComponent(statsRange)}`);
   statsOrders = data.orders || [];
@@ -1626,6 +1811,15 @@ $("bulk-deliver")?.addEventListener("click", () => {
   const ids = [...selectedOrderIds];
   if (!ids.length) return;
   setOrdersStatusBulk(ids, "done");
+});
+
+$("bulk-export-pdf")?.addEventListener("click", () => {
+  const ids = [...selectedOrderIds];
+  if (!ids.length) {
+    toast("Chọn ít nhất 1 đơn để in");
+    return;
+  }
+  exportOrdersPdfA6(ids);
 });
 
 $("bulk-delete")?.addEventListener("click", () => {
@@ -1879,6 +2073,14 @@ $("open-create-order")?.addEventListener("click", () => {
   openCreateOrder();
 });
 
+$("show-order-phone")?.addEventListener("click", () => {
+  revealOrderOptionalField("phone");
+});
+
+$("show-order-note")?.addEventListener("click", () => {
+  revealOrderOptionalField("note");
+});
+
 $("cart-clear")?.addEventListener("click", () => {
   clearCart();
   toast("Đã xóa món trong đơn");
@@ -1932,7 +2134,7 @@ $("order-form").addEventListener("submit", async (e) => {
   }
   if (!cart.length) {
     showComposeIssue(
-      orderCartLinesEl?.closest(".compose-section") || orderCartLinesEl,
+      $("order-menu")?.closest(".compose-section") || $("order-menu"),
       "Thêm ít nhất 1 món vào đơn",
     );
     return;

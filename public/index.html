@@ -100,7 +100,10 @@
           </div>
         </div>
         <div id="stats" class="stats-wrap">
-          <p class="empty">Đang tải thống kê...</p>
+          <div class="loading-state" role="status" aria-live="polite">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <p>Đang tải thống kê...</p>
+          </div>
         </div>
       </section>
 
@@ -179,7 +182,15 @@
                 aria-required="true"
               />
             </label>
-            <label class="field">
+            <div class="optional-actions" id="order-optional-actions">
+              <button type="button" class="btn optional-add" id="show-order-phone">
+                Thêm SĐT
+              </button>
+              <button type="button" class="btn optional-add" id="show-order-note">
+                Thêm note
+              </button>
+            </div>
+            <label class="field hidden" id="order-phone-field">
               <span>Số điện thoại</span>
               <input
                 id="customer-phone"
@@ -191,7 +202,7 @@
                 maxlength="20"
               />
             </label>
-            <label class="field">
+            <label class="field hidden" id="order-note-field">
               <span>Lưu ý đơn hàng</span>
               <textarea
                 id="order-note"
@@ -203,14 +214,12 @@
             </label>
           </section>
 
-          <section class="compose-section">
+          <section class="compose-section hidden" id="order-cart-section">
             <div class="compose-title-row">
               <h3 class="compose-title">Món trong đơn</h3>
               <button type="button" class="bulk-clear hidden" id="cart-clear">Xóa hết</button>
             </div>
-            <div id="order-cart-lines" class="cart-lines">
-              <p class="empty compose-empty">Chưa thêm món — chọn bên dưới.</p>
-            </div>
+            <div id="order-cart-lines" class="cart-lines"></div>
           </section>
 
           <section class="compose-section">
@@ -467,6 +476,7 @@
         </div>
         <div class="order-bulk-actions">
           <button type="button" class="btn ghost" id="bulk-select-all">Chọn tất cả</button>
+          <button type="button" class="btn ghost" id="bulk-export-pdf">In PDF A6</button>
           <button type="button" class="btn primary" id="bulk-deliver">Đã giao</button>
           <button type="button" class="btn danger" id="bulk-delete">Xóa</button>
         </div>
