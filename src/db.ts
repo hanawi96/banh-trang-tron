@@ -81,17 +81,57 @@ export type OrderRow = {
 
 export type OrderStatus = "pending" | "done";
 
-/** Start/end of "today" in Asia/Ho_Chi_Minh as unix ms */
-export function todayRangeVn(now = Date.now()): { start: number; end: number } {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
+export const VN_TZ = "Asia/Ho_Chi_Minh";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type DateRangeKey = "today" | "yesterday" | "7d" | "30d";
+
+/** Calendar day start (00:00) in Vietnam as unix ms. Instant itself is timezone-agnostic. */
+export function dayStartVn(now = Date.now()): number {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VN_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  });
-  const day = fmt.format(now); // YYYY-MM-DD
-  // VN is UTC+7, no DST
-  const start = Date.parse(`${day}T00:00:00+07:00`);
-  const end = start + 24 * 60 * 60 * 1000;
-  return { start, end };
+  }).format(now); // YYYY-MM-DD in VN
+  // Fixed UTC+7, no DST
+  return Date.parse(`${day}T00:00:00+07:00`);
+}
+
+/** Start/end of "today" in Asia/Ho_Chi_Minh as unix ms [start, end) */
+export function todayRangeVn(now = Date.now()): { start: number; end: number } {
+  const start = dayStartVn(now);
+  return { start, end: start + DAY_MS };
+}
+
+/** Inclusive calendar-day ranges in Asia/Ho_Chi_Minh → half-open [start, end) unix ms */
+export function rangeVn(
+  key: DateRangeKey,
+  now = Date.now(),
+): { start: number; end: number } {
+  const todayStart = dayStartVn(now);
+  const tomorrow = todayStart + DAY_MS;
+  switch (key) {
+    case "yesterday":
+      return { start: todayStart - DAY_MS, end: todayStart };
+    case "7d":
+      return { start: todayStart - 6 * DAY_MS, end: tomorrow };
+    case "30d":
+      return { start: todayStart - 29 * DAY_MS, end: tomorrow };
+    case "today":
+    default:
+      return { start: todayStart, end: tomorrow };
+  }
+}
+
+export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey {
+  if (raw === "yesterday" || raw === "7d" || raw === "30d" || raw === "today") {
+    return raw;
+  }
+  return "today";
+}
+
+/** Wall-clock "now" as unix ms — same everywhere; pair with VN_TZ when formatting. */
+export function nowMs(): number {
+  return Date.now();
 }

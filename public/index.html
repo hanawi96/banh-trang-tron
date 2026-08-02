@@ -47,6 +47,22 @@
       </section>
 
       <section id="tab-stats" class="tab-panel hidden" data-tab="stats">
+        <div class="orders-sticky stats-sticky">
+          <div class="order-filters stats-filters" role="tablist" aria-label="Lọc thống kê theo thời gian">
+            <button type="button" class="order-filter active" data-stats-range="today">
+              Hôm nay
+            </button>
+            <button type="button" class="order-filter" data-stats-range="yesterday">
+              Hôm qua
+            </button>
+            <button type="button" class="order-filter" data-stats-range="7d">
+              7 ngày
+            </button>
+            <button type="button" class="order-filter" data-stats-range="30d">
+              30 ngày
+            </button>
+          </div>
+        </div>
         <div id="stats" class="stats-wrap">
           <p class="empty">Đang tải thống kê...</p>
         </div>

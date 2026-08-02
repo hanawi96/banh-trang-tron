@@ -1,6 +1,13 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { ensureSchema, getDb, todayRangeVn, type OrderItem } from "./db";
+import {
+  ensureSchema,
+  getDb,
+  nowMs,
+  parseDateRangeKey,
+  rangeVn,
+  type OrderItem,
+} from "./db";
 import { getProduct, listProducts } from "./products";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -135,7 +142,9 @@ app.delete("/api/products/:id", async (c) => {
 app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
-  const { start, end } = todayRangeVn();
+  const rangeKey = parseDateRangeKey(c.req.query("range"));
+  const { start, end } = rangeVn(rangeKey);
+  const limit = rangeKey === "today" || rangeKey === "yesterday" ? 200 : 2000;
   const result = await db.execute({
     sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, status, created_at
           FROM orders
@@ -147,8 +156,8 @@ app.get("/api/orders", async (c) => {
               ELSE 2
             END ASC,
             created_at DESC
-          LIMIT 100`,
-    args: [start, end],
+          LIMIT ?`,
+    args: [start, end, limit],
   });
 
   const orders = result.rows.map((row) => ({
@@ -163,7 +172,7 @@ app.get("/api/orders", async (c) => {
     created_at: Number(row.created_at),
   }));
 
-  return c.json({ orders });
+  return c.json({ orders, range: rangeKey, start, end, tz: "Asia/Ho_Chi_Minh" });
 });
 
 app.post("/api/orders", async (c) => {
@@ -194,7 +203,8 @@ app.post("/api/orders", async (c) => {
   const customer = (body.customer ?? "").trim().slice(0, 120);
   const phone = (body.phone ?? "").trim().slice(0, 20);
   const id = crypto.randomUUID();
-  const created_at = Date.now();
+  // Unix ms (UTC epoch) — display/filter with Asia/Ho_Chi_Minh day bounds
+  const created_at = nowMs();
 
   const db = getDb(c.env);
   await ensureSchema(db);

@@ -28,6 +28,10 @@ const qtyMap = new Map();
 let products = [];
 /** @type {Array<any>} */
 let ordersCache = [];
+/** @type {Array<any>} */
+let statsOrders = [];
+/** @type {'today'|'yesterday'|'7d'|'30d'} */
+let statsRange = "today";
 /** @type {'pending'|'done'|'all'} */
 let orderFilter = "pending";
 /** @type {Set<string>} */
@@ -112,7 +116,14 @@ function revealApp() {
   finishBoot();
 }
 
-function computeStats() {
+const STATS_RANGE_LABEL = {
+  today: "Hôm nay",
+  yesterday: "Hôm qua",
+  "7d": "7 ngày qua",
+  "30d": "30 ngày qua",
+};
+
+function computeStats(list) {
   const costMap = new Map(products.map((p) => [p.id, Number(p.cost) || 0]));
   let revenue = 0;
   let revenueDone = 0;
@@ -125,7 +136,7 @@ function computeStats() {
   /** @type {Map<string, {name:string, qty:number, revenue:number}>} */
   const byProduct = new Map();
 
-  for (const o of ordersCache) {
+  for (const o of list) {
     const status = normalizeStatus(o.status);
     const total = Number(o.total) || 0;
     revenue += total;
@@ -164,7 +175,7 @@ function computeStats() {
     .slice(0, 5);
 
   return {
-    totalOrders: ordersCache.length,
+    totalOrders: list.length,
     pending,
     done,
     revenue,
@@ -180,9 +191,10 @@ function computeStats() {
 function renderStats() {
   const root = $("stats");
   if (!root) return;
-  const s = computeStats();
+  const label = STATS_RANGE_LABEL[statsRange] || "Hôm nay";
+  const s = computeStats(statsOrders);
   if (!s.totalOrders) {
-    root.innerHTML = `<p class="empty">Chưa có đơn hôm nay để thống kê.</p>`;
+    root.innerHTML = `<p class="empty">Chưa có đơn trong khoảng “${escapeHtml(label)}”.</p>`;
     return;
   }
 
@@ -202,7 +214,7 @@ function renderStats() {
     : `<p class="empty">Chưa có dữ liệu món.</p>`;
 
   root.innerHTML = `
-    <p class="stats-kicker">Hôm nay · Asia/Ho Chi Minh</p>
+    <p class="stats-kicker">${escapeHtml(label)} · giờ Việt Nam (UTC+7)</p>
     <div class="stats-hero">
       <article class="stats-card stats-card-lg">
         <span>Doanh thu</span>
@@ -575,9 +587,10 @@ function setTab(tab) {
   if (tab === "orders") {
     loadOrders().catch(() => {});
   } else if (tab === "stats") {
-    const paint = () => renderStats();
-    if (!ordersCache.length) loadOrders().then(paint).catch(paint);
-    else paint();
+    loadStats().catch(() => {
+      const root = $("stats");
+      if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
+    });
   }
 }
 
@@ -736,8 +749,35 @@ async function loadProducts() {
 }
 
 async function loadOrders() {
-  const data = await api("/api/orders");
+  const data = await api("/api/orders?range=today");
   renderOrders(data.orders || []);
+  // Keep today's stats cache in sync when viewing/editing đơn hôm nay
+  if (statsRange === "today") {
+    statsOrders = data.orders || [];
+  }
+}
+
+async function loadStats() {
+  const root = $("stats");
+  if (root) root.innerHTML = `<p class="empty">Đang tải thống kê...</p>`;
+  const data = await api(`/api/orders?range=${encodeURIComponent(statsRange)}`);
+  statsOrders = data.orders || [];
+  renderStats();
+}
+
+function setStatsRange(next) {
+  if (!STATS_RANGE_LABEL[next]) return;
+  statsRange = next;
+  document.querySelectorAll("[data-stats-range]").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.getAttribute("data-stats-range") === next,
+    );
+  });
+  loadStats().catch(() => {
+    const root = $("stats");
+    if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
+  });
 }
 
 /** Enter app only after menu is ready — no empty-shell flash */
@@ -764,7 +804,13 @@ document.querySelector(".tabbar").addEventListener("click", (e) => {
   setTab(btn.getAttribute("data-go"));
 });
 
-document.querySelector(".order-filters")?.addEventListener("click", (e) => {
+document.querySelector(".stats-filters")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-stats-range]");
+  if (!btn) return;
+  setStatsRange(btn.getAttribute("data-stats-range"));
+});
+
+document.querySelector("#tab-orders .order-filters")?.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-order-filter]");
   if (!btn) return;
   const next = btn.getAttribute("data-order-filter");
