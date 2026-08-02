@@ -417,7 +417,13 @@ const IMAGE_TYPES: Record<string, string> = {
 };
 
 app.get("/images/:key{.+}", async (c) => {
-  const key = c.req.param("key");
+  let key = c.req.param("key") || "";
+  try {
+    key = decodeURIComponent(key);
+  } catch {
+    return c.text("Not found", 404);
+  }
+  key = key.replace(/^\/+/, "");
   if (!key || key.includes("..")) {
     return c.text("Not found", 404);
   }

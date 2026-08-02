@@ -85,9 +85,20 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+function imagesPath(key) {
+  const clean = String(key || "")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join("/");
+  return clean ? `/images/${clean}` : "";
+}
+
 function imageUrl(product) {
   const bust = product.updated_at ? `?v=${product.updated_at}` : "";
-  return `/images/${encodeURIComponent(product.image)}${bust}`;
+  const path = imagesPath(product.image);
+  return path ? `${path}${bust}` : "";
 }
 
 function readProductCache() {
@@ -460,9 +471,7 @@ function renderOrders(orders) {
     el.dataset.orderId = o.id;
     const first = o.items[0];
     const imgKey = first ? resolveItemImage(first) : "";
-    const imgSrc = imgKey
-      ? `/images/${encodeURIComponent(imgKey)}`
-      : "";
+    const imgSrc = imagesPath(imgKey);
     const linesHtml = o.items
       .map(
         (i) =>
@@ -706,9 +715,7 @@ function openEditOrderModal(order) {
   $("edit-order-title").textContent = item.name;
   $("edit-order-product-name").textContent = item.name;
   const imgKey = resolveItemImage(item);
-  $("edit-order-thumb").src = imgKey
-    ? `/images/${encodeURIComponent(imgKey)}`
-    : "";
+  $("edit-order-thumb").src = imagesPath(imgKey);
   $("edit-order-customer").value = order.customer || "";
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
