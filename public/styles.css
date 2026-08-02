@@ -1315,28 +1315,22 @@ body.bulk-open .tabbar {
   font-weight: 500;
 }
 
-.modal-sheet-order {
-  max-height: min(94dvh, 920px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-left: 0;
-  padding-right: 0;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-}
-
-.modal-sheet-order .modal-head {
-  padding-left: 16px;
-  padding-right: 16px;
-}
+/* Order sheet padding override lives after .modal-sheet (see below) */
 
 .order-compose {
   flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 16px 8px;
+  /* No horizontal padding here — keeps scrollbar flush to sheet edge */
+  padding: 0 0 8px;
   gap: 16px;
+}
+
+.order-compose > .compose-section,
+.order-compose > .compose-submit {
+  margin-left: 16px;
+  margin-right: 16px;
 }
 
 .compose-section {
@@ -1702,6 +1696,20 @@ body.bulk-open .tabbar {
   background: #fff;
   box-shadow: 0 -12px 40px rgba(16, 35, 28, 0.18);
   animation: sheet 0.28s var(--ease) both;
+}
+
+/* Must follow .modal-sheet so shorthand padding does not win */
+.modal-sheet.modal-sheet-order {
+  max-height: min(94dvh, 920px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+}
+
+.modal-sheet.modal-sheet-order .modal-head {
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 .modal-grab {
