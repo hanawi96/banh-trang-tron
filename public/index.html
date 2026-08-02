@@ -17,6 +17,18 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      (() => {
+        const j = (u) =>
+          fetch(u, { credentials: "same-origin" })
+            .then((r) => (r.ok ? r.json() : Promise.reject()))
+            .catch(() => null);
+        window.__BT_PREFETCH = {
+          orders: j("/api/orders?range=today"),
+          products: j("/api/products"),
+        };
+      })();
+    </script>
   </head>
   <body>
     <main id="app" class="hidden">
@@ -57,8 +69,12 @@
             </button>
           </div>
         </div>
-        <div id="orders" class="order-list">
-          <p class="empty">Chưa có đơn.</p>
+        <div id="orders" class="order-list" aria-busy="true">
+          <div class="order-skeleton" aria-hidden="true">
+            <div class="order-skeleton-card"></div>
+            <div class="order-skeleton-card"></div>
+            <div class="order-skeleton-card"></div>
+          </div>
         </div>
       </section>
 

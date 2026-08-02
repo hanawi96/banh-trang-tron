@@ -12,20 +12,35 @@ export function getDb(env: Env): Client {
 
 export async function ensureSchema(db: Client): Promise<void> {
   if (ready) return;
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id TEXT PRIMARY KEY,
-      items_json TEXT NOT NULL,
-      total INTEGER NOT NULL,
-      note TEXT,
-      customer TEXT,
-      phone TEXT,
-      delivery_slot TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at INTEGER NOT NULL
-    )
-  `);
-  // Existing DBs: add columns if missing
+  // One round-trip batch for cold isolate — avoid N sequential Turso calls
+  await db.batch(
+    [
+      `CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        items_json TEXT NOT NULL,
+        total INTEGER NOT NULL,
+        note TEXT,
+        customer TEXT,
+        phone TEXT,
+        delivery_slot TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        cost INTEGER NOT NULL DEFAULT 0,
+        price_large INTEGER NOT NULL DEFAULT 0,
+        cost_large INTEGER NOT NULL DEFAULT 0,
+        image TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`,
+    ],
+    "write",
+  );
   for (const col of [
     "phone TEXT",
     "delivery_slot TEXT",
@@ -37,25 +52,6 @@ export async function ensureSchema(db: Client): Promise<void> {
       // column already exists
     }
   }
-  await db.execute(
-    `UPDATE orders SET status = 'pending' WHERE status IS NULL OR status = ''`,
-  );
-  await db.execute(
-    `CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`,
-  );
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      price INTEGER NOT NULL,
-      cost INTEGER NOT NULL DEFAULT 0,
-      price_large INTEGER NOT NULL DEFAULT 0,
-      cost_large INTEGER NOT NULL DEFAULT 0,
-      image TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
-    )
-  `);
   ready = true;
 }
 

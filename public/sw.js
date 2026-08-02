@@ -1,5 +1,5 @@
 /* Bánh tráng trộn PWA — bump CACHE when shipping shell changes */
-const CACHE = "bt-shell-v6";
+const CACHE = "bt-shell-v8";
 const PRECACHE = [
   "/",
   "/index.html",
@@ -7,7 +7,6 @@ const PRECACHE = [
   "/app.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
-  "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ];
 
@@ -31,25 +30,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function networkFirst(request) {
-  const cache = await caches.open(CACHE);
-  try {
-    const fresh = await fetch(request);
-    if (fresh && fresh.ok) {
-      cache.put(request, fresh.clone());
-    }
-    return fresh;
-  } catch {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    if (request.mode === "navigate") {
-      const shell = await cache.match("/index.html");
-      if (shell) return shell;
-    }
-    throw new Error("offline");
-  }
-}
-
+/** Instant from cache, refresh in background — keeps browser spinner short */
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(request);
@@ -59,7 +40,31 @@ async function staleWhileRevalidate(request) {
       return res;
     })
     .catch(() => cached);
-  return cached || fetching;
+  if (cached) {
+    fetching.catch(() => {});
+    return cached;
+  }
+  return fetching;
+}
+
+async function cacheFirstNavigate(request) {
+  const cache = await caches.open(CACHE);
+  const cached =
+    (await cache.match(request)) || (await cache.match("/index.html"));
+  const fetching = fetch(request)
+    .then((res) => {
+      if (res && res.ok) {
+        cache.put(request, res.clone());
+        cache.put("/index.html", res.clone());
+      }
+      return res;
+    })
+    .catch(() => cached);
+  if (cached) {
+    fetching.catch(() => {});
+    return cached;
+  }
+  return fetching;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -69,18 +74,21 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Always hit network for API — never serve stale orders/stats
+  // API always network — never stale orders/stats
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // Product images: cache, refresh in background
   if (url.pathname.startsWith("/images/")) {
     event.respondWith(staleWhileRevalidate(request));
     return;
   }
 
-  // App shell & static assets: network-first, offline fallback
-  event.respondWith(networkFirst(request));
+  if (request.mode === "navigate") {
+    event.respondWith(cacheFirstNavigate(request));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(request));
 });

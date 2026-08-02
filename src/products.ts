@@ -67,7 +67,11 @@ const DEFAULT_LARGE: Record<string, { price_large: number; cost_large: number }>
     ]),
   );
 
+let productsReady = false;
+
 export async function ensureProducts(db: Client): Promise<void> {
+  if (productsReady) return;
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
@@ -116,6 +120,7 @@ export async function ensureProducts(db: Client): Promise<void> {
         ],
       });
     }
+    productsReady = true;
     return;
   }
 
@@ -126,7 +131,7 @@ export async function ensureProducts(db: Client): Promise<void> {
     });
   }
 
-  // Backfill large size from seed or +5k/+2k when missing
+  // Backfill large size from seed or +5k/+2k when missing (once per isolate)
   const rows = await db.execute(
     `SELECT id, price, cost, price_large, cost_large FROM products`,
   );
@@ -153,6 +158,7 @@ export async function ensureProducts(db: Client): Promise<void> {
       });
     }
   }
+  productsReady = true;
 }
 
 export function mapProduct(row: Record<string, unknown>): Product {

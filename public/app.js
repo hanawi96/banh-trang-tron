@@ -23,6 +23,7 @@ const orderMenuEl = $("order-menu");
 const orderCartLinesEl = $("order-cart-lines");
 
 const PRODUCT_CACHE_KEY = "bt_products_v2";
+const ORDERS_CACHE_KEY = "bt_orders_today_v1";
 
 /** @type {Map<string, number>} */
 const qtyMap = new Map();
@@ -108,6 +109,15 @@ function imageUrl(product) {
   return path ? `${path}${bust}` : "";
 }
 
+function vnDayKey(ts = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ts));
+}
+
 function readProductCache() {
   try {
     const raw = localStorage.getItem(PRODUCT_CACHE_KEY);
@@ -124,6 +134,55 @@ function writeProductCache(list) {
     localStorage.setItem(PRODUCT_CACHE_KEY, JSON.stringify(list));
   } catch {
     /* quota / private mode */
+  }
+}
+
+function readOrdersCache() {
+  try {
+    const raw = localStorage.getItem(ORDERS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.day !== vnDayKey() || !Array.isArray(data.orders)) {
+      return null;
+    }
+    return data.orders;
+  } catch {
+    return null;
+  }
+}
+
+function writeOrdersCache(list) {
+  try {
+    localStorage.setItem(
+      ORDERS_CACHE_KEY,
+      JSON.stringify({ day: vnDayKey(), orders: list }),
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function showOrdersSkeleton() {
+  if (!ordersEl) return;
+  ordersEl.setAttribute("aria-busy", "true");
+  ordersEl.innerHTML = `
+    <div class="order-skeleton" aria-hidden="true">
+      <div class="order-skeleton-card"></div>
+      <div class="order-skeleton-card"></div>
+      <div class="order-skeleton-card"></div>
+    </div>`;
+}
+
+/** Consume early prefetch from index.html, if present */
+async function takePrefetch(key) {
+  const bag = typeof window !== "undefined" ? window.__BT_PREFETCH : null;
+  if (!bag || !bag[key]) return null;
+  const pending = bag[key];
+  bag[key] = null;
+  try {
+    return await pending;
+  } catch {
+    return null;
   }
 }
 
@@ -363,7 +422,7 @@ function lockBody(lock) {
   document.body.style.overflow = lock || anyModalOpen() ? "hidden" : "";
 }
 
-function buildProductCard(p, { manage }) {
+function buildProductCard(p, { manage, sold = 0 }) {
   if (!qtyMap.has(p.id)) qtyMap.set(p.id, 1);
   if (!sizeMap.has(p.id)) sizeMap.set(p.id, "nho");
   const q = getQty(p.id);
@@ -386,7 +445,7 @@ function buildProductCard(p, { manage }) {
       <div class="product-body">
         <h3>${escapeHtml(p.name)}</h3>
         <p class="price">Nhỏ ${vnd.format(p.price)} · To ${vnd.format(p.price_large ?? p.price)}</p>
-        <p class="sold">Đã bán ${Number(p.sold) || 0}</p>
+        <p class="sold">Đã bán ${sold}</p>
       </div>
     `;
     return row;
@@ -396,7 +455,7 @@ function buildProductCard(p, { manage }) {
     <div class="product-body">
       <h3>${escapeHtml(p.name)}</h3>
       <p class="price" data-price>${vnd.format(unit)}</p>
-      <p class="sold">Đã bán ${Number(p.sold) || 0}</p>
+      <p class="sold">Đã bán ${sold}</p>
     </div>
     <div class="product-controls">
       <div class="product-pick-row">
@@ -418,8 +477,13 @@ function buildProductCard(p, { manage }) {
 
 function renderProductList(root, { manage }) {
   if (!root) return;
+  const soldMap = soldTodayByProductId();
   const frag = document.createDocumentFragment();
-  for (const p of products) frag.appendChild(buildProductCard(p, { manage }));
+  for (const p of products) {
+    frag.appendChild(
+      buildProductCard(p, { manage, sold: soldMap.get(p.id) || 0 }),
+    );
+  }
   root.replaceChildren(frag);
 }
 
@@ -571,6 +635,20 @@ function setProducts(list, { render = true, cache = true } = {}) {
   if (render) renderMenu();
 }
 
+/** Sold today — derived from orders cache (no extra API) */
+function soldTodayByProductId() {
+  const map = new Map();
+  for (const o of ordersCache) {
+    for (const item of o.items || []) {
+      const id = String(item.id || "");
+      const qty = Math.floor(Number(item.qty)) || 0;
+      if (!id || qty < 1) continue;
+      map.set(id, (map.get(id) || 0) + qty);
+    }
+  }
+  return map;
+}
+
 function resolveItemImage(item) {
   if (item.image) return item.image;
   const p = products.find((x) => x.id === item.id);
@@ -658,7 +736,9 @@ function renderOrders(orders) {
       status: normalizeStatus(o.status),
     })),
   );
+  writeOrdersCache(ordersCache);
   updateOrderFilterCounts();
+  ordersEl?.removeAttribute("aria-busy");
 
   const visible =
     orderFilter === "all"
@@ -689,13 +769,23 @@ function renderOrders(orders) {
     const first = o.items[0];
     const imgKey = first ? resolveItemImage(first) : "";
     const imgSrc = imagesPath(imgKey);
-    const linesHtml = o.items
-      .map(
-        (i) =>
-          `<span class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span><span class="order-size">${escapeHtml(sizeLabel(i.size))}</span></span>`,
-      )
+    const receiver = [o.customer, o.phone].filter(Boolean).join(" · ");
+    const note = (o.note || "").trim();
+    const itemsHtml = (o.items || [])
+      .map((i, idx) => {
+        const sizeText = sizeLabel(i.size);
+        return `<div class="order-item-block">
+          <p class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span>${
+            sizeText ? `<span class="order-size">${escapeHtml(sizeText)}</span>` : ""
+          }</p>
+          ${
+            idx === 0 && note
+              ? `<p class="order-meta-line"><span class="order-note">${escapeHtml(note)}</span></p>`
+              : ""
+          }
+        </div>`;
+      })
       .join("");
-    const bits = [o.customer, o.phone, o.note].filter(Boolean);
     const slot = o.delivery_slot === "chieu" ? "chieu" : o.delivery_slot === "trua" ? "trua" : "";
     const slotText = slotLabel(slot);
     const statusText = status === "done" ? "Đã giao" : "Chưa giao";
@@ -732,12 +822,12 @@ function renderOrders(orders) {
             : `<div class="order-thumb order-thumb-empty" aria-hidden="true"></div>`
         }
         <div class="order-info">
-          <p class="lines">${linesHtml}</p>
-          ${
-            bits.length
-              ? `<p class="sub">${escapeHtml(bits.join(" · "))}</p>`
-              : `<p class="sub sub-empty">Chưa có thông tin khách</p>`
-          }
+          <p class="order-receiver">${
+            receiver
+              ? escapeHtml(receiver)
+              : `<span class="order-receiver-empty">Chưa có tên / SĐT</span>`
+          }</p>
+          ${itemsHtml}
         </div>
       </div>
       <div class="order-actions">
@@ -1086,13 +1176,21 @@ async function api(path, opts = {}) {
 }
 
 async function loadProducts() {
-  const data = await api("/api/products");
+  const pre = await takePrefetch("products");
+  const data =
+    pre && Array.isArray(pre.products) ? pre : await api("/api/products");
   setProducts(data.products || []);
 }
 
 async function loadOrders() {
-  const data = await api("/api/orders?range=today");
+  const pre = await takePrefetch("orders");
+  const data =
+    pre && Array.isArray(pre.orders)
+      ? pre
+      : await api("/api/orders?range=today");
   renderOrders(data.orders || []);
+  // Refresh "đã bán" on product cards from today's orders
+  if (products.length) renderMenu();
   // Keep today's stats cache in sync when viewing/editing đơn hôm nay
   if (statsRange === "today") {
     statsOrders = data.orders || [];
@@ -1132,18 +1230,30 @@ function setStatsRange(next) {
   });
 }
 
-/** Enter app only after menu is ready — no empty-shell flash */
+/** Show shell immediately; refresh data in background (never block paint on API) */
 async function enterApp() {
-  const cached = readProductCache();
-  if (cached?.length) {
-    setProducts(cached, { cache: false });
-    revealApp();
-    loadProducts().catch(() => {});
-  } else {
-    await loadProducts();
-    revealApp();
+  const cachedProducts = readProductCache();
+  const cachedOrders = readOrdersCache();
+
+  if (cachedProducts?.length) {
+    setProducts(cachedProducts, { cache: false });
   }
-  loadOrders().catch(() => {});
+  if (cachedOrders) {
+    renderOrders(cachedOrders);
+  } else {
+    showOrdersSkeleton();
+  }
+
+  revealApp();
+
+  try {
+    // Orders first for home; products in parallel (cached menu already painted)
+    await Promise.all([loadOrders(), loadProducts()]);
+  } catch {
+    if (!ordersCache.length) {
+      ordersEl.innerHTML = `<p class="empty">Không tải được đơn.</p>`;
+    }
+  }
 }
 
 async function refreshData() {

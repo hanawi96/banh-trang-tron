@@ -1,0 +1,17 @@
+/
+  Cache-Control: public, max-age=60, stale-while-revalidate=600
+
+/index.html
+  Cache-Control: public, max-age=60, stale-while-revalidate=600
+
+/styles.css
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+
+/app.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/icons/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
