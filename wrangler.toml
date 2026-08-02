@@ -1,0 +1,14 @@
+name = "banh-trang-tron"
+main = "src/index.ts"
+compatibility_date = "2025-03-01"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "banh-trang-tron"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+run_worker_first = ["/api/*", "/images/*"]

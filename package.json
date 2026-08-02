@@ -1,0 +1,19 @@
+{
+  "name": "banh-trang-tron",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "node scripts/init-db.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "hono": "^4.9.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260730.1",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.33.1"
+  }
+}
