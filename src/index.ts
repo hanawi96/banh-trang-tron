@@ -373,6 +373,40 @@ app.post("/api/orders/status-bulk", async (c) => {
   return c.json({ ok: true, status, ids });
 });
 
+app.delete("/api/orders/:id", async (c) => {
+  const id = c.req.param("id");
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const result = await db.execute({
+    sql: `DELETE FROM orders WHERE id = ?`,
+    args: [id],
+  });
+  if (result.rowsAffected === 0) {
+    return c.json({ error: "Không tìm thấy đơn" }, 404);
+  }
+  return c.json({ ok: true, id });
+});
+
+app.post("/api/orders/delete-bulk", async (c) => {
+  const body = await c.req.json<{ ids?: string[] }>().catch(() => null);
+  const ids = Array.isArray(body?.ids)
+    ? [...new Set(body.ids.map((id) => String(id).slice(0, 64)).filter(Boolean))].slice(0, 100)
+    : [];
+  if (!ids.length) {
+    return c.json({ error: "Chưa chọn đơn" }, 400);
+  }
+
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const placeholders = ids.map(() => "?").join(", ");
+  await db.execute({
+    sql: `DELETE FROM orders WHERE id IN (${placeholders})`,
+    args: ids,
+  });
+
+  return c.json({ ok: true, ids });
+});
+
 const IMAGE_TYPES: Record<string, string> = {
   webp: "image/webp",
   jpg: "image/jpeg",

@@ -7,6 +7,7 @@ const orderModal = $("order-modal");
 const editOrderModal = $("edit-order-modal");
 const editModal = $("edit-modal");
 const deleteModal = $("delete-modal");
+const deleteOrderModal = $("delete-order-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -47,6 +48,8 @@ let deletingProduct = null;
 /** @type {any} */
 let editingOrder = null;
 let editOrderQty = 1;
+/** @type {string[]} */
+let pendingDeleteOrderIds = [];
 /** @type {File|null} */
 let pendingImageFile = null;
 let previewObjectUrl = "";
@@ -133,6 +136,8 @@ function computeStats(list) {
   let done = 0;
   let revTrua = 0;
   let revChieu = 0;
+  let countTrua = 0;
+  let countChieu = 0;
   /** @type {Map<string, {name:string, qty:number, revenue:number}>} */
   const byProduct = new Map();
 
@@ -146,8 +151,13 @@ function computeStats(list) {
     } else {
       pending += 1;
     }
-    if (o.delivery_slot === "trua") revTrua += total;
-    else if (o.delivery_slot === "chieu") revChieu += total;
+    if (o.delivery_slot === "trua") {
+      revTrua += total;
+      countTrua += 1;
+    } else if (o.delivery_slot === "chieu") {
+      revChieu += total;
+      countChieu += 1;
+    }
 
     for (const item of o.items || []) {
       const qty = Number(item.qty) || 0;
@@ -184,6 +194,8 @@ function computeStats(list) {
     profitDone,
     revTrua,
     revChieu,
+    countTrua,
+    countChieu,
     topProducts,
   };
 }
@@ -247,10 +259,12 @@ function renderStats() {
         <article class="stats-card">
           <span>Giao trưa</span>
           <strong>${vnd.format(s.revTrua)}</strong>
+          <small>${s.countTrua} đơn</small>
         </article>
         <article class="stats-card">
           <span>Giao chiều</span>
           <strong>${vnd.format(s.revChieu)}</strong>
+          <small>${s.countChieu} đơn</small>
         </article>
       </div>
     </div>
@@ -277,7 +291,8 @@ function anyModalOpen() {
     !orderModal.classList.contains("hidden") ||
     !editOrderModal.classList.contains("hidden") ||
     !editModal.classList.contains("hidden") ||
-    !deleteModal.classList.contains("hidden")
+    !deleteModal.classList.contains("hidden") ||
+    !deleteOrderModal.classList.contains("hidden")
   );
 }
 
@@ -385,8 +400,11 @@ function updateOrderFilterCounts() {
   } else {
     ordersBadge.classList.add("hidden");
   }
-  document.querySelectorAll(".order-filter").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-order-filter") === orderFilter);
+  document.querySelectorAll("#tab-orders .order-filter").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.getAttribute("data-order-filter") === orderFilter,
+    );
   });
   updateBulkBar();
 }
@@ -503,6 +521,9 @@ function renderOrders(orders) {
         <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
           ${EDIT_ICON}
         </button>
+        <button type="button" class="order-delete-icon" data-delete-order="${escapeHtml(o.id)}" aria-label="Xóa đơn">
+          ${DELETE_ICON}
+        </button>
       </div>
     `;
     frag.appendChild(el);
@@ -535,6 +556,62 @@ async function setOrderStatus(id, status) {
     toast(err.message || "Không cập nhật được");
   } finally {
     statusBusy.delete(id);
+  }
+}
+
+function openDeleteOrderModal(ids) {
+  pendingDeleteOrderIds = [...new Set(ids.filter(Boolean))];
+  if (!pendingDeleteOrderIds.length) return;
+  const n = pendingDeleteOrderIds.length;
+  $("delete-order-title").textContent = n > 1 ? `Xóa ${n} đơn` : "Xóa đơn hàng";
+  $("delete-order-text").textContent =
+    n > 1
+      ? `Bạn sắp xóa ${n} đơn đã chọn. Hành động này không hoàn tác.`
+      : "Bạn sắp xóa đơn này. Hành động này không hoàn tác.";
+  deleteOrderModal.classList.remove("hidden");
+  deleteOrderModal.setAttribute("aria-hidden", "false");
+  lockBody(true);
+}
+
+function closeDeleteOrderModal() {
+  pendingDeleteOrderIds = [];
+  deleteOrderModal.classList.add("hidden");
+  deleteOrderModal.setAttribute("aria-hidden", "true");
+  lockBody(false);
+}
+
+function removeOrdersFromCaches(ids) {
+  const drop = new Set(ids);
+  ordersCache = ordersCache.filter((o) => !drop.has(o.id));
+  statsOrders = statsOrders.filter((o) => !drop.has(o.id));
+  for (const id of drop) selectedOrderIds.delete(id);
+}
+
+async function deleteOrders(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return;
+  const snapshot = ordersCache.slice();
+  const statsSnapshot = statsOrders.slice();
+  removeOrdersFromCaches(unique);
+  renderOrders(ordersCache);
+  if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
+
+  try {
+    if (unique.length === 1) {
+      await api(`/api/orders/${encodeURIComponent(unique[0])}`, { method: "DELETE" });
+    } else {
+      await api("/api/orders/delete-bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids: unique }),
+      });
+    }
+    toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
+  } catch (err) {
+    ordersCache = snapshot;
+    statsOrders = statsSnapshot;
+    renderOrders(ordersCache);
+    if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
+    toast(err.message || "Không xóa được");
   }
 }
 
@@ -577,6 +654,7 @@ function setTab(tab) {
   $("tab-stats")?.classList.toggle("hidden", tab !== "stats");
   viewTitle.textContent =
     tab === "products" ? "Sản phẩm" : tab === "orders" ? "Đơn hàng" : "Thống kê";
+  document.querySelector(".topbar")?.classList.toggle("hidden", tab === "orders");
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-go") === tab);
   });
@@ -757,9 +835,19 @@ async function loadOrders() {
   }
 }
 
+function syncStatsRangeButtons() {
+  document.querySelectorAll("[data-stats-range]").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.getAttribute("data-stats-range") === statsRange,
+    );
+  });
+}
+
 async function loadStats() {
   const root = $("stats");
   if (root) root.innerHTML = `<p class="empty">Đang tải thống kê...</p>`;
+  syncStatsRangeButtons();
   const data = await api(`/api/orders?range=${encodeURIComponent(statsRange)}`);
   statsOrders = data.orders || [];
   renderStats();
@@ -843,6 +931,26 @@ $("bulk-deliver")?.addEventListener("click", () => {
   setOrdersStatusBulk(ids, "done");
 });
 
+$("bulk-delete")?.addEventListener("click", () => {
+  const ids = [...selectedOrderIds];
+  if (!ids.length) return;
+  openDeleteOrderModal(ids);
+});
+
+$("confirm-delete-order")?.addEventListener("click", async () => {
+  const ids = pendingDeleteOrderIds.slice();
+  closeDeleteOrderModal();
+  await deleteOrders(ids);
+});
+
+deleteOrderModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (t.hasAttribute("data-close-delete-order") || t.closest("[data-close-delete-order]")) {
+    closeDeleteOrderModal();
+  }
+});
+
 ordersEl.addEventListener("change", (e) => {
   const t = e.target;
   if (!(t instanceof HTMLInputElement) || !t.matches("[data-select-order]")) return;
@@ -866,11 +974,18 @@ ordersEl.addEventListener("click", (e) => {
     setOrderStatus(id, next);
     return;
   }
-  const btn = t.closest("[data-edit-order]");
-  if (!btn) return;
-  const id = btn.getAttribute("data-edit-order");
-  const order = ordersCache.find((o) => o.id === id);
-  if (order) openEditOrderModal(order);
+  const editBtn = t.closest("[data-edit-order]");
+  if (editBtn) {
+    const id = editBtn.getAttribute("data-edit-order");
+    const order = ordersCache.find((o) => o.id === id);
+    if (order) openEditOrderModal(order);
+    return;
+  }
+  const deleteBtn = t.closest("[data-delete-order]");
+  if (deleteBtn) {
+    const id = deleteBtn.getAttribute("data-delete-order");
+    if (id) openDeleteOrderModal([id]);
+  }
 });
 
 menuEl.addEventListener("click", (e) => {
@@ -1104,3 +1219,11 @@ $("edit-form").addEventListener("submit", async (e) => {
 });
 
 boot();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* ignore SW failures — app still works online */
+    });
+  });
+}

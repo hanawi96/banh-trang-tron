@@ -11,7 +11,7 @@
   --danger: #c0352b;
   --shadow: 0 10px 30px rgba(16, 35, 28, 0.08);
   --radius: 18px;
-  --font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --tabbar-h: 56px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -599,15 +599,19 @@ body.bulk-open .tabbar {
 
 .order-bulk-actions {
   display: grid;
-  grid-template-columns: 1fr 1.15fr;
+  grid-template-columns: 1fr 1.15fr 1fr;
   gap: 8px;
 }
 
 .order-bulk-actions .btn {
   min-height: 42px;
-  padding: 8px 10px;
-  font-size: 0.9rem;
+  padding: 8px 8px;
+  font-size: 0.88rem;
   border-radius: 12px;
+}
+
+.order-bulk-actions .btn.danger {
+  letter-spacing: -0.01em;
 }
 
 .order-filter {
@@ -739,7 +743,7 @@ body.bulk-open .tabbar {
 
 .order-actions {
   display: grid;
-  grid-template-columns: 1fr 42px;
+  grid-template-columns: 1fr 42px 42px;
   gap: 8px;
   align-items: center;
 }
@@ -754,7 +758,8 @@ body.bulk-open .tabbar {
   cursor: pointer;
 }
 
-.order-actions .order-edit-icon {
+.order-actions .order-edit-icon,
+.order-actions .order-delete-icon {
   width: 42px;
   height: 42px;
 }
@@ -818,7 +823,8 @@ body.bulk-open .tabbar {
   font-variant-numeric: tabular-nums;
 }
 
-.order-edit-icon {
+.order-edit-icon,
+.order-delete-icon {
   width: 30px;
   height: 30px;
   display: grid;
@@ -831,7 +837,14 @@ body.bulk-open .tabbar {
   flex-shrink: 0;
 }
 
-.order-edit-icon svg {
+.order-delete-icon {
+  color: var(--danger);
+  background: #fff5f4;
+  border-color: #f0d0cc;
+}
+
+.order-edit-icon svg,
+.order-delete-icon svg {
   width: 15px;
   height: 15px;
 }
@@ -839,6 +852,11 @@ body.bulk-open .tabbar {
 .order-edit-icon:active {
   transform: scale(0.96);
   background: var(--accent-soft);
+}
+
+.order-delete-icon:active {
+  transform: scale(0.96);
+  background: #ffe8e6;
 }
 
 .order-main {
