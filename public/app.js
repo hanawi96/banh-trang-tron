@@ -1231,7 +1231,12 @@ async function setOrdersStatusBulk(ids, status) {
   }
 }
 
+/** Tracks active tab so boot → setTab("orders") does not double-fetch */
+let activeTab = "orders";
+
 function setTab(tab) {
+  const prev = activeTab;
+  activeTab = tab;
   $("tab-products").classList.toggle("hidden", tab !== "products");
   $("tab-orders").classList.toggle("hidden", tab !== "orders");
   $("tab-stats")?.classList.toggle("hidden", tab !== "stats");
@@ -1244,15 +1249,18 @@ function setTab(tab) {
     selectedOrderIds.clear();
     updateBulkBar();
   }
+  // Only refetch when user switches into the tab (not when already there / boot)
   if (tab === "orders") {
-    loadOrders().catch(() => {});
+    if (prev !== "orders") loadOrders().catch(() => {});
   } else if (tab === "products") {
     renderProductList(menuEl, { manage: true });
   } else if (tab === "stats") {
-    loadStats().catch(() => {
-      const root = $("stats");
-      if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
-    });
+    if (prev !== "stats") {
+      loadStats().catch(() => {
+        const root = $("stats");
+        if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
+      });
+    }
   }
 }
 
@@ -1646,23 +1654,40 @@ async function api(path, opts = {}) {
   return data;
 }
 
+/** @type {Promise<void>|null} */
+let productsLoadPromise = null;
+/** @type {Promise<void>|null} */
+let ordersLoadPromise = null;
+
 async function loadProducts() {
-  const pre = await takePrefetch("products");
-  const data =
-    pre && Array.isArray(pre.products) ? pre : await api("/api/products");
-  setProducts(data.products || []);
+  if (productsLoadPromise) return productsLoadPromise;
+  productsLoadPromise = (async () => {
+    const pre = await takePrefetch("products");
+    const data =
+      pre && Array.isArray(pre.products) ? pre : await api("/api/products");
+    setProducts(data.products || []);
+  })().finally(() => {
+    productsLoadPromise = null;
+  });
+  return productsLoadPromise;
 }
 
 async function loadOrders() {
-  const pre = await takePrefetch("orders");
-  const data =
-    pre && Array.isArray(pre.orders)
-      ? pre
-      : await api("/api/orders?range=upcoming");
-  ordersFetchedDay = vnDayKey();
-  renderOrders(data.orders || []);
-  // Sold counts = delivery today only (not whole upcoming board)
-  if (products.length) renderMenu();
+  if (ordersLoadPromise) return ordersLoadPromise;
+  ordersLoadPromise = (async () => {
+    const pre = await takePrefetch("orders");
+    const data =
+      pre && Array.isArray(pre.orders)
+        ? pre
+        : await api("/api/orders?range=upcoming");
+    ordersFetchedDay = vnDayKey();
+    renderOrders(data.orders || []);
+    // Sold counts = delivery today only (not whole upcoming board)
+    if (products.length) renderMenu();
+  })().finally(() => {
+    ordersLoadPromise = null;
+  });
+  return ordersLoadPromise;
 }
 
 function syncStatsRangeButtons() {

@@ -1,7 +1,9 @@
 import { createClient, type Client } from "@libsql/client/web";
 import type { Env } from "./env";
 
-let ready = false;
+let schemaReady = false;
+/** Single-flight: parallel /api calls must not run schema migration twice */
+let schemaPromise: Promise<void> | null = null;
 
 export function getDb(env: Env): Client {
   return createClient({
@@ -10,8 +12,7 @@ export function getDb(env: Env): Client {
   });
 }
 
-export async function ensureSchema(db: Client): Promise<void> {
-  if (ready) return;
+async function runEnsureSchema(db: Client): Promise<void> {
   // One round-trip batch for cold isolate — avoid N sequential Turso calls
   await db.batch(
     [
@@ -55,7 +56,18 @@ export async function ensureSchema(db: Client): Promise<void> {
       // column already exists
     }
   }
-  ready = true;
+  schemaReady = true;
+}
+
+export async function ensureSchema(db: Client): Promise<void> {
+  if (schemaReady) return;
+  if (!schemaPromise) {
+    schemaPromise = runEnsureSchema(db).catch((err) => {
+      schemaPromise = null;
+      throw err;
+    });
+  }
+  await schemaPromise;
 }
 
 export type OrderSize = "nho" | "to";

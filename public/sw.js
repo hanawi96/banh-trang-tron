@@ -1,5 +1,7 @@
-/* Bánh tráng trộn PWA — bump CACHE when shipping shell changes */
-const CACHE = "bt-shell-v32";
+/* Bánh tráng trộn PWA — bump SHELL_CACHE when shipping shell changes */
+const SHELL_CACHE = "bt-shell-v33";
+/** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
+const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
   "/",
   "/index.html",
@@ -13,7 +15,7 @@ const PRECACHE = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
-      .open(CACHE)
+      .open(SHELL_CACHE)
       .then((cache) => cache.addAll(PRECACHE))
       .then(() => self.skipWaiting()),
   );
@@ -24,15 +26,19 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+        Promise.all(
+          keys
+            .filter((k) => k.startsWith("bt-shell-") && k !== SHELL_CACHE)
+            .map((k) => caches.delete(k)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
 });
 
 /** Instant from cache, refresh in background — keeps browser spinner short */
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE);
+async function staleWhileRevalidate(request, cacheName) {
+  const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   const fetching = fetch(request)
     .then((res) => {
@@ -48,7 +54,7 @@ async function staleWhileRevalidate(request) {
 }
 
 async function cacheFirstNavigate(request) {
-  const cache = await caches.open(CACHE);
+  const cache = await caches.open(SHELL_CACHE);
   const cached =
     (await cache.match(request)) || (await cache.match("/index.html"));
   const fetching = fetch(request)
@@ -57,7 +63,6 @@ async function cacheFirstNavigate(request) {
         cache.put(request, res.clone());
         cache.put("/index.html", res.clone());
       }
-      return res;
     })
     .catch(() => cached);
   if (cached) {
@@ -81,7 +86,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/images/")) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(staleWhileRevalidate(request, IMAGE_CACHE));
     return;
   }
 
@@ -90,5 +95,5 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(staleWhileRevalidate(request));
+  event.respondWith(staleWhileRevalidate(request, SHELL_CACHE));
 });
