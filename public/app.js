@@ -11,7 +11,6 @@ const deleteOrderModal = $("delete-order-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
-const ordersCount = $("orders-count");
 const saveBtn = $("save-order");
 const saveEditOrderBtn = $("save-edit-order");
 const saveProductBtn = $("save-product");
@@ -939,9 +938,6 @@ function updateOrderFilterCounts() {
   if (countPending) countPending.textContent = String(pending);
   if (countDone) countDone.textContent = String(done);
   if (countAll) countAll.textContent = String(all);
-  ordersCount.textContent = String(
-    orderFilter === "pending" ? pending : orderFilter === "done" ? done : all,
-  );
   if (pending > 0) {
     ordersBadge.textContent = String(pending);
     ordersBadge.classList.remove("hidden");
@@ -1083,9 +1079,11 @@ function renderOrders(orders) {
       <div class="order-main">
         <p class="order-receiver">${
           receiver
-            ? `<span class="order-receiver-text">${escapeHtml(receiver)}</span>${
+            ? `<span class="order-receiver-dot" aria-hidden="true"></span><span class="order-receiver-text">${escapeHtml(receiver)}</span>${
                 orderCount > 0
-                  ? `<span class="order-buy-count" title="Số lần đặt hàng">${orderCount} lần</span>`
+                  ? `<span class="order-buy-count" title="Số lần đặt hàng">${
+                      orderCount === 1 ? "lần đầu" : `${orderCount} lần`
+                    }</span>`
                   : ""
               }`
             : `<span class="order-receiver-empty">Chưa có tên / SĐT</span>`

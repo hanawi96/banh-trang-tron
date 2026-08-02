@@ -767,14 +767,6 @@ html.booting .tabbar {
 }
 
 /* Orders */
-.orders-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
 .orders-sticky {
   position: sticky;
   top: 0;
@@ -915,26 +907,6 @@ body.bulk-open .tabbar {
 
 .order-filter.active em {
   background: var(--accent-soft);
-}
-
-.orders-head p {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.orders-head span {
-  min-width: 28px;
-  text-align: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-2);
-  font-weight: 700;
-  font-size: 0.85rem;
 }
 
 .order-list {
@@ -1183,6 +1155,14 @@ body.bulk-open .tabbar {
   min-width: 0;
 }
 
+.order-receiver-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-2);
+}
+
 .order-receiver-text {
   min-width: 0;
   overflow: hidden;
@@ -1339,13 +1319,23 @@ body.bulk-open .tabbar {
   max-height: min(94dvh, 920px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
 }
 
+.modal-sheet-order .modal-head {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
 .order-compose {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-bottom: 8px;
+  padding: 0 16px 8px;
   gap: 16px;
 }
 
