@@ -1,5 +1,5 @@
 /* Bánh tráng trộn PWA — bump CACHE when shipping shell changes */
-const CACHE = "bt-shell-v20";
+const CACHE = "bt-shell-v21";
 const PRECACHE = [
   "/",
   "/index.html",

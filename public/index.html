@@ -230,7 +230,7 @@
     <div id="edit-order-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-edit-order></div>
       <div
-        class="modal-sheet"
+        class="modal-sheet modal-sheet-order"
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-order-title"
@@ -239,69 +239,88 @@
         <header class="modal-head">
           <div>
             <p class="modal-kicker">Sửa đơn</p>
-            <h2 id="edit-order-title">Đơn hàng</h2>
+            <div class="modal-title-row">
+              <h2 id="edit-order-title">Đơn hàng</h2>
+              <p class="modal-meta" id="edit-order-meta"></p>
+            </div>
           </div>
           <button type="button" class="icon-btn" data-close-edit-order aria-label="Đóng">
             Đóng
           </button>
         </header>
-        <form id="edit-order-form" class="modal-form">
-          <div id="edit-order-items" class="cart-lines edit-order-items"></div>
-          <p class="modal-meta" id="edit-order-meta"></p>
-          <fieldset class="slot-field">
-            <legend>Ngày giao</legend>
-            <div
-              class="slot-options date-options"
-              id="edit-delivery-date-options"
-              role="radiogroup"
-              aria-label="Ngày giao"
-            ></div>
-          </fieldset>
-          <fieldset class="slot-field">
-            <legend>Buổi giao</legend>
-            <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
-              <label class="slot-option">
-                <input type="radio" name="edit_delivery_slot" value="trua" checked />
-                <span>Giao trưa</span>
-              </label>
-              <label class="slot-option">
-                <input type="radio" name="edit_delivery_slot" value="chieu" />
-                <span>Giao chiều</span>
-              </label>
-            </div>
-          </fieldset>
-          <label class="field">
-            <span>Tên khách hàng <em class="req-mark">*</em></span>
-            <input
-              id="edit-order-customer"
-              type="text"
-              maxlength="120"
-              placeholder="Nhập tên khách"
-              aria-required="true"
-            />
-          </label>
-          <label class="field">
-            <span>Số điện thoại</span>
-            <input
-              id="edit-order-phone"
-              type="tel"
-              inputmode="tel"
-              maxlength="20"
-              placeholder="09xx xxx xxx"
-            />
-          </label>
-          <label class="field">
-            <span>Lưu ý đơn hàng</span>
-            <textarea
-              id="edit-order-note"
-              rows="3"
-              maxlength="300"
-              placeholder="Ít cay, thêm trứng..."
-            ></textarea>
-          </label>
-          <button class="btn primary full" type="submit" id="save-edit-order">
-            Lưu thay đổi
-          </button>
+        <form id="edit-order-form" class="modal-form order-compose">
+          <section class="compose-section">
+            <h3 class="compose-title">Thông tin giao</h3>
+            <fieldset class="slot-field">
+              <legend>Ngày giao</legend>
+              <p class="slot-hint">Chọn 1 ngày · sau 17h mặc định ngày mai</p>
+              <div
+                class="slot-options date-options"
+                id="edit-delivery-date-options"
+                role="radiogroup"
+                aria-label="Ngày giao"
+              ></div>
+            </fieldset>
+            <fieldset class="slot-field">
+              <legend>Buổi giao</legend>
+              <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
+                <label class="slot-option">
+                  <input type="radio" name="edit_delivery_slot" value="trua" checked />
+                  <span>Giao trưa</span>
+                </label>
+                <label class="slot-option">
+                  <input type="radio" name="edit_delivery_slot" value="chieu" />
+                  <span>Giao chiều</span>
+                </label>
+              </div>
+            </fieldset>
+            <label class="field">
+              <span>Tên khách hàng <em class="req-mark">*</em></span>
+              <input
+                id="edit-order-customer"
+                type="text"
+                maxlength="120"
+                placeholder="Nhập tên khách"
+                aria-required="true"
+              />
+            </label>
+            <label class="field">
+              <span>Số điện thoại</span>
+              <input
+                id="edit-order-phone"
+                type="tel"
+                inputmode="tel"
+                maxlength="20"
+                placeholder="09xx xxx xxx"
+              />
+            </label>
+            <label class="field">
+              <span>Lưu ý đơn hàng</span>
+              <textarea
+                id="edit-order-note"
+                rows="2"
+                maxlength="300"
+                placeholder="Ít cay, thêm trứng..."
+              ></textarea>
+            </label>
+          </section>
+
+          <section class="compose-section">
+            <h3 class="compose-title">Món trong đơn</h3>
+            <div id="edit-order-items" class="cart-lines edit-order-items"></div>
+          </section>
+
+          <section class="compose-section">
+            <h3 class="compose-title">Thêm / đổi món</h3>
+            <div id="edit-order-menu" class="product-list order-picker"></div>
+          </section>
+
+          <div class="compose-submit">
+            <button class="btn primary full btn-busyable" type="submit" id="save-edit-order">
+              <span class="btn-spinner" aria-hidden="true"></span>
+              <span class="btn-label">Lưu thay đổi</span>
+            </button>
+          </div>
         </form>
       </div>
     </div>

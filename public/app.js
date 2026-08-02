@@ -21,6 +21,7 @@ const editImageInput = $("edit-image");
 const editOrderMeta = $("edit-order-meta");
 const orderMenuEl = $("order-menu");
 const orderCartLinesEl = $("order-cart-lines");
+const editOrderMenuEl = $("edit-order-menu");
 
 const PRODUCT_CACHE_KEY = "bt_products_v2";
 const ORDERS_CACHE_KEY = "bt_orders_today_v1";
@@ -492,6 +493,9 @@ function renderMenu() {
   if (orderMenuEl && !orderModal.classList.contains("hidden")) {
     renderProductList(orderMenuEl, { manage: false });
   }
+  if (editOrderMenuEl && !editOrderModal.classList.contains("hidden")) {
+    renderProductList(editOrderMenuEl, { manage: false });
+  }
 }
 
 function lineKey(id, size) {
@@ -509,21 +513,29 @@ function cartTotals(list = cart) {
   return { parts, total, lines: list.length };
 }
 
-function renderLineRow(line, { prefix }) {
+function renderLineRow(line, { prefix, sizeToggle = false }) {
   const el = document.createElement("div");
-  el.className = "cart-line";
-  el.dataset.lineKey = line.key || lineKey(line.id, line.size);
+  el.className = sizeToggle ? "cart-line cart-line-edit" : "cart-line";
+  const key = line.key || lineKey(line.id, line.size);
+  el.dataset.lineKey = key;
+  const size = normalizeSize(line.size);
+  const sizeHtml = sizeToggle
+    ? `<div class="size-seg cart-line-size" role="group" aria-label="Size">
+        <button type="button" data-${prefix}-size="${escapeHtml(key)}" data-size="nho" class="${size === "nho" ? "active" : ""}">Nhỏ</button>
+        <button type="button" data-${prefix}-size="${escapeHtml(key)}" data-size="to" class="${size === "to" ? "active" : ""}">To</button>
+      </div>`
+    : `<span class="order-size">${escapeHtml(sizeLabel(size))}</span>`;
   el.innerHTML = `
     <div class="cart-line-info">
       <strong>${escapeHtml(line.name)}</strong>
-      <span class="cart-line-meta"><span class="order-size">${escapeHtml(sizeLabel(line.size))}</span><span class="cart-line-price">${vnd.format(line.price)}</span></span>
+      <span class="cart-line-meta">${sizeHtml}<span class="cart-line-price">${vnd.format(line.price)}</span></span>
     </div>
     <div class="qty">
-      <button type="button" data-${prefix}-minus="${escapeHtml(el.dataset.lineKey)}" aria-label="Giảm">−</button>
+      <button type="button" data-${prefix}-minus="${escapeHtml(key)}" aria-label="Giảm">−</button>
       <span>${line.qty}</span>
-      <button type="button" data-${prefix}-plus="${escapeHtml(el.dataset.lineKey)}" aria-label="Tăng">+</button>
+      <button type="button" data-${prefix}-plus="${escapeHtml(key)}" aria-label="Tăng">+</button>
     </div>
-    <button type="button" class="cart-line-remove" data-${prefix}-remove="${escapeHtml(el.dataset.lineKey)}" aria-label="Xóa dòng">
+    <button type="button" class="cart-line-remove" data-${prefix}-remove="${escapeHtml(key)}" aria-label="Xóa dòng">
       ${DELETE_ICON}
     </button>
   `;
@@ -1195,23 +1207,29 @@ function renderDeliveryDateOptions(rootId, inputName, selectedYmd, extraYmd) {
 }
 
 function refreshEditOrderMeta() {
-  if (!editOrderMeta) return;
   const { parts, total, lines } = cartTotals(editOrderItems);
-  if (!lines) {
-    editOrderMeta.textContent = "Chưa có món trong đơn";
-    return;
+  if (editOrderMeta) {
+    editOrderMeta.textContent = lines
+      ? `${lines} món · ${parts} phần · ${formatVnd(total)}`
+      : "Chưa có món";
   }
-  editOrderMeta.textContent = `${lines} món · ${parts} phần · ${vnd.format(total)}`;
+  const label = saveEditOrderBtn?.querySelector(".btn-label");
+  if (label && !saveEditOrderBtn.classList.contains("is-busy")) {
+    label.textContent = lines
+      ? `Lưu thay đổi (${formatVnd(total)})`
+      : "Lưu thay đổi";
+  }
 }
 
 function renderEditOrderItems() {
   const root = $("edit-order-items");
   if (!root) return;
   if (!editOrderItems.length) {
-    root.innerHTML = `<p class="empty">Đơn trống — thêm món từ giỏ hoặc hủy.</p>`;
+    root.innerHTML = `<p class="empty compose-empty">Chưa có món — chọn bên dưới.</p>`;
     refreshEditOrderMeta();
     return;
   }
+  root.closest(".compose-section")?.classList.remove("is-invalid");
   const frag = document.createDocumentFragment();
   for (const item of editOrderItems) {
     const line = {
@@ -1219,19 +1237,63 @@ function renderEditOrderItems() {
       key: lineKey(item.id, item.size),
       size: normalizeSize(item.size),
     };
-    frag.appendChild(renderLineRow(line, { prefix: "edit" }));
+    frag.appendChild(renderLineRow(line, { prefix: "edit", sizeToggle: true }));
   }
   root.replaceChildren(frag);
   refreshEditOrderMeta();
 }
 
+function addToEditOrder(product) {
+  const size = getSize(product.id);
+  const addQty = getQty(product.id);
+  const price = productUnitPrice(product, size);
+  const key = lineKey(product.id, size);
+  const existing = editOrderItems.find((l) => lineKey(l.id, l.size) === key);
+  if (existing) {
+    existing.qty = Math.min(99, existing.qty + addQty);
+    existing.price = price;
+    existing.name = product.name;
+    existing.image = product.image;
+  } else {
+    editOrderItems.push({
+      id: product.id,
+      name: product.name,
+      size,
+      qty: addQty,
+      price,
+      image: product.image,
+    });
+  }
+  setQty(product.id, 1);
+  renderEditOrderItems();
+  toast(`+${addQty} ${product.name} (${sizeLabel(size)})`);
+}
+
+function setEditOrderLineSize(key, size) {
+  const next = normalizeSize(size);
+  const line = editOrderItems.find((l) => lineKey(l.id, l.size) === key);
+  if (!line || normalizeSize(line.size) === next) return;
+  const catalog = products.find((p) => p.id === line.id);
+  const price = catalog
+    ? productUnitPrice(catalog, next)
+    : Number(line.price) || 0;
+  const newKey = lineKey(line.id, next);
+  const existing = editOrderItems.find((l) => lineKey(l.id, l.size) === newKey);
+  if (existing) {
+    existing.qty = Math.min(99, existing.qty + line.qty);
+    existing.price = price;
+    editOrderItems = editOrderItems.filter((l) => lineKey(l.id, l.size) !== key);
+  } else {
+    line.size = next;
+    line.price = price;
+  }
+  renderEditOrderItems();
+}
+
 function openEditOrderModal(order) {
   editingOrder = order;
+  clearComposeInvalid(editOrderModal);
   const items = order.items || [];
-  if (!items.length) {
-    toast("Đơn không hợp lệ");
-    return;
-  }
   editOrderItems = items.map((item) => {
     const size = normalizeSize(item.size);
     const catalog = products.find((p) => p.id === item.id);
@@ -1246,10 +1308,7 @@ function openEditOrderModal(order) {
       image: item.image || resolveItemImage(item),
     };
   });
-  $("edit-order-title").textContent =
-    editOrderItems.length === 1
-      ? editOrderItems[0].name
-      : `Đơn ${editOrderItems.length} món`;
+  $("edit-order-title").textContent = "Sửa đơn hàng";
   $("edit-order-customer").value = order.customer || "";
   $("edit-order-phone").value = order.phone || "";
   $("edit-order-note").value = order.note || "";
@@ -1264,15 +1323,17 @@ function openEditOrderModal(order) {
     order.delivery_slot === "chieu" ? "chieu" : "trua",
   );
   renderEditOrderItems();
+  renderProductList(editOrderMenuEl, { manage: false });
   editOrderModal.classList.remove("hidden");
   editOrderModal.setAttribute("aria-hidden", "false");
   lockBody(true);
-  requestAnimationFrame(() => $("edit-order-customer").focus());
+  requestAnimationFrame(() => $("edit-order-customer")?.focus());
 }
 
 function closeEditOrderModal() {
   editingOrder = null;
   editOrderItems = [];
+  if (editOrderMenuEl) editOrderMenuEl.replaceChildren();
   editOrderModal.classList.add("hidden");
   editOrderModal.setAttribute("aria-hidden", "true");
   lockBody(false);
@@ -1645,12 +1706,42 @@ document.addEventListener("keydown", (e) => {
 $("edit-order-items")?.addEventListener("click", (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
+  const sizeBtn = t.closest("[data-edit-size]");
+  if (sizeBtn) {
+    const key = sizeBtn.getAttribute("data-edit-size");
+    const size = sizeBtn.getAttribute("data-size");
+    if (key && size) setEditOrderLineSize(key, size);
+    return;
+  }
   const minus = t.closest("[data-edit-minus]")?.getAttribute("data-edit-minus");
   const plus = t.closest("[data-edit-plus]")?.getAttribute("data-edit-plus");
   const remove = t.closest("[data-edit-remove]")?.getAttribute("data-edit-remove");
   if (minus) updateEditOrderLine(minus, -1);
   else if (plus) updateEditOrderLine(plus, 1);
   else if (remove) removeEditOrderLine(remove);
+});
+
+editOrderMenuEl?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const sizeBtn = t.closest("[data-size-for]");
+  if (sizeBtn) {
+    const id = sizeBtn.getAttribute("data-size-for");
+    const size = sizeBtn.getAttribute("data-size");
+    if (id && size) setSize(id, size);
+    return;
+  }
+  const el = t.closest("[data-plus],[data-minus],[data-add]");
+  if (!(el instanceof HTMLElement)) return;
+  const plus = el.getAttribute("data-plus");
+  const minus = el.getAttribute("data-minus");
+  const add = el.getAttribute("data-add");
+  if (plus) setQty(plus, getQty(plus) + 1);
+  if (minus) setQty(minus, getQty(minus) - 1);
+  if (add) {
+    const product = products.find((p) => p.id === add);
+    if (product) addToEditOrder(product);
+  }
 });
 
 $("edit-order-customer")?.addEventListener("input", () => {
@@ -1680,7 +1771,10 @@ $("edit-order-form").addEventListener("submit", async (e) => {
   }
   const delivery_date =
     selectedDeliveryDate("edit_delivery_date") || defaultDeliveryYmd();
+  const label = saveEditOrderBtn?.querySelector(".btn-label");
   saveEditOrderBtn.disabled = true;
+  saveEditOrderBtn.classList.add("is-busy");
+  if (label) label.textContent = "Đang lưu...";
   try {
     await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
       method: "PUT",
@@ -1708,6 +1802,8 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     toast(err.message || "Không lưu được");
   } finally {
     saveEditOrderBtn.disabled = false;
+    saveEditOrderBtn.classList.remove("is-busy");
+    refreshEditOrderMeta();
   }
 });
 
