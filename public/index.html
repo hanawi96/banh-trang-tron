@@ -24,7 +24,7 @@
             .then((r) => (r.ok ? r.json() : Promise.reject()))
             .catch(() => null);
         window.__BT_PREFETCH = {
-          orders: j("/api/orders?range=today"),
+          orders: j("/api/orders?range=upcoming"),
           products: j("/api/products"),
         };
       })();
@@ -53,7 +53,7 @@
           </button>
         </div>
         <div class="orders-head">
-          <p>Đơn giao hôm nay</p>
+          <p>Đơn cần giao</p>
           <span id="orders-count">0</span>
         </div>
         <div class="orders-sticky">

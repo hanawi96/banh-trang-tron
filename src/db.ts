@@ -220,7 +220,7 @@ export type OrderStatus = "pending" | "done";
 export const VN_TZ = "Asia/Ho_Chi_Minh";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type DateRangeKey = "today" | "yesterday" | "7d" | "30d";
+export type DateRangeKey = "today" | "yesterday" | "7d" | "30d" | "upcoming";
 
 /** Calendar day start (00:00) in Vietnam as unix ms. Instant itself is timezone-agnostic. */
 export function dayStartVn(now = Date.now()): number {
@@ -261,10 +261,27 @@ export function rangeVn(
 }
 
 export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey {
-  if (raw === "yesterday" || raw === "7d" || raw === "30d" || raw === "today") {
+  if (
+    raw === "yesterday" ||
+    raw === "7d" ||
+    raw === "30d" ||
+    raw === "today" ||
+    raw === "upcoming"
+  ) {
     return raw;
   }
   return "today";
+}
+
+/** Home board: today → last selectable delivery day (same window as date picker). */
+export function upcomingDeliveryYmdRange(now = Date.now()): {
+  startYmd: string;
+  endYmdExclusive: string;
+} {
+  const opts = deliveryDateOptions(now);
+  const startYmd = vnYmd(now);
+  const last = opts[opts.length - 1]?.ymd || startYmd;
+  return { startYmd, endYmdExclusive: addDaysYmd(last, 1) };
 }
 
 /** Wall-clock "now" as unix ms — same everywhere; pair with VN_TZ when formatting. */

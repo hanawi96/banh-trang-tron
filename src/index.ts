@@ -9,6 +9,8 @@ import {
   parseDateRangeKey,
   parseDeliveryDate,
   rangeVn,
+  todayRangeVn,
+  upcomingDeliveryYmdRange,
   vnYmd,
   type OrderItem,
 } from "./db";
@@ -192,12 +194,28 @@ app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
-  const { start, end } = rangeVn(rangeKey);
-  const limit = rangeKey === "today" || rangeKey === "yesterday" ? 200 : 2000;
-  // All ranges are by delivery day (VN). Legacy rows without delivery_date
-  // fall back to created_at in the same window.
-  const startYmd = vnYmd(start);
-  const endYmdExclusive = vnYmd(end);
+  // By delivery day (VN). Legacy rows without delivery_date use created_at.
+  // `upcoming` = home board (today → last day in the date-picker window).
+  let startYmd: string;
+  let endYmdExclusive: string;
+  let createdStart: number;
+  let createdEnd: number;
+  if (rangeKey === "upcoming") {
+    ({ startYmd, endYmdExclusive } = upcomingDeliveryYmdRange());
+    ({ start: createdStart, end: createdEnd } = todayRangeVn());
+  } else {
+    const { start, end } = rangeVn(rangeKey);
+    startYmd = vnYmd(start);
+    endYmdExclusive = vnYmd(end);
+    createdStart = start;
+    createdEnd = end;
+  }
+  const limit =
+    rangeKey === "today" ||
+    rangeKey === "yesterday" ||
+    rangeKey === "upcoming"
+      ? 200
+      : 2000;
   const result = await db.execute({
     sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
           FROM orders
@@ -217,7 +235,7 @@ app.get("/api/orders", async (c) => {
             END ASC,
             created_at ASC
           LIMIT ?`,
-    args: [startYmd, endYmdExclusive, start, end, limit],
+    args: [startYmd, endYmdExclusive, createdStart, createdEnd, limit],
   });
 
   const orders = result.rows.map((row) => ({
@@ -255,8 +273,8 @@ app.get("/api/orders", async (c) => {
   return c.json({
     orders: ordersWithCount,
     range: rangeKey,
-    start,
-    end,
+    startYmd,
+    endYmdExclusive,
     tz: "Asia/Ho_Chi_Minh",
   });
 });

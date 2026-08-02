@@ -24,7 +24,7 @@ const orderCartLinesEl = $("order-cart-lines");
 const editOrderMenuEl = $("edit-order-menu");
 
 const PRODUCT_CACHE_KEY = "bt_products_v2";
-const ORDERS_CACHE_KEY = "bt_orders_today_v1";
+const ORDERS_CACHE_KEY = "bt_orders_board_v1";
 
 /** @type {Map<string, number>} */
 const qtyMap = new Map();
@@ -691,10 +691,18 @@ function setProducts(list, { render = true, cache = true } = {}) {
   if (render) renderMenu();
 }
 
-/** Sold today — derived from orders cache (no extra API) */
+/** Sold for delivery-today — from board cache filtered by today's YMD */
 function soldTodayByProductId() {
+  const today = vnYmd();
   const map = new Map();
   for (const o of ordersCache) {
+    const d = String(o.delivery_date || "");
+    if (d && d !== today) continue;
+    if (!d) {
+      // legacy: only count if created today
+      const createdDay = vnYmd(Number(o.created_at) || Date.now());
+      if (createdDay !== today) continue;
+    }
     for (const item of o.items || []) {
       const id = String(item.id || "");
       const qty = Math.floor(Number(item.qty)) || 0;
@@ -818,7 +826,7 @@ function renderOrders(orders) {
       : ordersCache.filter((o) => normalizeStatus(o.status) === orderFilter);
 
   if (!ordersCache.length) {
-    ordersEl.innerHTML = `<p class="empty">Chưa có đơn giao hôm nay.</p>`;
+    ordersEl.innerHTML = `<p class="empty">Chưa có đơn cần giao.</p>`;
     return;
   }
   if (!visible.length) {
@@ -827,7 +835,7 @@ function renderOrders(orders) {
         ? "Không còn đơn chưa giao."
         : orderFilter === "done"
           ? "Chưa có đơn đã giao."
-          : "Chưa có đơn giao hôm nay."
+          : "Chưa có đơn cần giao."
     }</p>`;
     return;
   }
@@ -1472,15 +1480,11 @@ async function loadOrders() {
   const data =
     pre && Array.isArray(pre.orders)
       ? pre
-      : await api("/api/orders?range=today");
+      : await api("/api/orders?range=upcoming");
   ordersFetchedDay = vnDayKey();
   renderOrders(data.orders || []);
-  // Refresh sold counts from delivery-today orders
+  // Sold counts = delivery today only (not whole upcoming board)
   if (products.length) renderMenu();
-  if (statsRange === "today") {
-    statsOrders = data.orders || [];
-    if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
-  }
 }
 
 function syncStatsRangeButtons() {
