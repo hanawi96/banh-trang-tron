@@ -9,6 +9,7 @@ import {
   parseDateRangeKey,
   parseDeliveryDate,
   rangeVn,
+  vnYmd,
   type OrderItem,
 } from "./db";
 import { getProduct, listProducts } from "./products";
@@ -193,10 +194,19 @@ app.get("/api/orders", async (c) => {
   const rangeKey = parseDateRangeKey(c.req.query("range"));
   const { start, end } = rangeVn(rangeKey);
   const limit = rangeKey === "today" || rangeKey === "yesterday" ? 200 : 2000;
+  // All ranges are by delivery day (VN). Legacy rows without delivery_date
+  // fall back to created_at in the same window.
+  const startYmd = vnYmd(start);
+  const endYmdExclusive = vnYmd(end);
   const result = await db.execute({
     sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
           FROM orders
-          WHERE created_at >= ? AND created_at < ?
+          WHERE
+            (delivery_date >= ? AND delivery_date < ?)
+            OR (
+              (delivery_date IS NULL OR delivery_date = '')
+              AND created_at >= ? AND created_at < ?
+            )
           ORDER BY
             CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
             delivery_date ASC,
@@ -207,7 +217,7 @@ app.get("/api/orders", async (c) => {
             END ASC,
             created_at ASC
           LIMIT ?`,
-    args: [start, end, limit],
+    args: [startYmd, endYmdExclusive, start, end, limit],
   });
 
   const orders = result.rows.map((row) => ({

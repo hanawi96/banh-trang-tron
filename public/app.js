@@ -63,6 +63,7 @@ let previewObjectUrl = "";
 const EDIT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"/></svg>`;
 const DELETE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
 const PLUS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>`;
+const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>`;
 
 const vndNum = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
@@ -152,15 +153,27 @@ function readOrdersCache() {
   }
 }
 
+/** VN day the in-memory orders list belongs to — blocks midnight cache poison */
+let ordersFetchedDay = "";
+
 function writeOrdersCache(list) {
   try {
+    const day = vnDayKey();
+    if (ordersFetchedDay && ordersFetchedDay !== day) return;
     localStorage.setItem(
       ORDERS_CACHE_KEY,
-      JSON.stringify({ day: vnDayKey(), orders: list }),
+      JSON.stringify({ day, orders: list }),
     );
   } catch {
     /* quota / private mode */
   }
+}
+
+/** If calendar day rolled over while app stayed open, refetch delivery-today list */
+function refreshOrdersIfDayChanged() {
+  if (!ordersFetchedDay || ordersFetchedDay === vnDayKey()) return;
+  ordersFetchedDay = "";
+  loadOrders().catch(() => {});
 }
 
 function showOrdersSkeleton() {
@@ -348,7 +361,7 @@ function renderStats() {
     : `<p class="empty">Chưa có dữ liệu món.</p>`;
 
   root.innerHTML = `
-    <p class="stats-kicker">${escapeHtml(label)} · giờ Việt Nam (UTC+7)</p>
+    <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao · giờ VN</p>
     <div class="stats-hero">
       <article class="stats-card stats-card-lg">
         <span>Doanh thu</span>
@@ -446,7 +459,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
       <div class="product-body">
         <h3>${escapeHtml(p.name)}</h3>
         <p class="price">Nhỏ ${vnd.format(p.price)} · To ${vnd.format(p.price_large ?? p.price)}</p>
-        <p class="sold">Đã bán ${sold}</p>
+        <p class="sold">Giao hôm nay ${sold}</p>
       </div>
     `;
     return row;
@@ -456,7 +469,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
     <div class="product-body">
       <h3>${escapeHtml(p.name)}</h3>
       <p class="price" data-price>${vnd.format(unit)}</p>
-      <p class="sold">Đã bán ${sold}</p>
+      <p class="sold">Giao hôm nay ${sold}</p>
     </div>
     <div class="product-controls">
       <div class="product-pick-row">
@@ -782,12 +795,19 @@ function sortOrders(list) {
 }
 
 function renderOrders(orders) {
+  const day = vnDayKey();
+  if (ordersFetchedDay && ordersFetchedDay !== day) {
+    ordersFetchedDay = "";
+    loadOrders().catch(() => {});
+    return;
+  }
   ordersCache = sortOrders(
     (orders || []).map((o) => ({
       ...o,
       status: normalizeStatus(o.status),
     })),
   );
+  if (!ordersFetchedDay) ordersFetchedDay = day;
   writeOrdersCache(ordersCache);
   updateOrderFilterCounts();
   ordersEl?.removeAttribute("aria-busy");
@@ -798,7 +818,7 @@ function renderOrders(orders) {
       : ordersCache.filter((o) => normalizeStatus(o.status) === orderFilter);
 
   if (!ordersCache.length) {
-    ordersEl.innerHTML = `<p class="empty">Chưa có đơn hôm nay.</p>`;
+    ordersEl.innerHTML = `<p class="empty">Chưa có đơn giao hôm nay.</p>`;
     return;
   }
   if (!visible.length) {
@@ -807,7 +827,7 @@ function renderOrders(orders) {
         ? "Không còn đơn chưa giao."
         : orderFilter === "done"
           ? "Chưa có đơn đã giao."
-          : "Chưa có đơn hôm nay."
+          : "Chưa có đơn giao hôm nay."
     }</p>`;
     return;
   }
@@ -888,7 +908,11 @@ function renderOrders(orders) {
       </div>
       <div class="order-actions">
         <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}">
-          ${status === "done" ? "Hoàn tác · Chưa giao" : "Đánh dấu đã giao"}
+          ${
+            status === "done"
+              ? "Hoàn tác · Chưa giao"
+              : `${CHECK_ICON}<span>Đánh dấu đã giao</span>`
+          }
         </button>
         <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
           ${EDIT_ICON}
@@ -1136,10 +1160,16 @@ function deliveryDateOptions(now = Date.now()) {
   return opts;
 }
 
-/** Before 17:00 → today; from 17:00 → first available (tomorrow / Monday) */
+/**
+ * Before 17:00 → today.
+ * From 17:00 → tomorrow if still in the list (Sunday evening → Monday).
+ */
 function defaultDeliveryYmd(now = Date.now()) {
   const opts = deliveryDateOptions(now);
   if (!opts.length) return vnYmd(now);
+  if (vnHour(now) < 17) return opts[0].ymd;
+  const today = vnYmd(now);
+  if (opts[0].ymd === today && opts[1]) return opts[1].ymd;
   return opts[0].ymd;
 }
 
@@ -1443,12 +1473,13 @@ async function loadOrders() {
     pre && Array.isArray(pre.orders)
       ? pre
       : await api("/api/orders?range=today");
+  ordersFetchedDay = vnDayKey();
   renderOrders(data.orders || []);
-  // Refresh "đã bán" on product cards from today's orders
+  // Refresh sold counts from delivery-today orders
   if (products.length) renderMenu();
-  // Keep today's stats cache in sync when viewing/editing đơn hôm nay
   if (statsRange === "today") {
     statsOrders = data.orders || [];
+    if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
   }
 }
 
@@ -1494,6 +1525,7 @@ async function enterApp() {
     setProducts(cachedProducts, { cache: false });
   }
   if (cachedOrders) {
+    ordersFetchedDay = vnDayKey();
     renderOrders(cachedOrders);
   } else {
     showOrdersSkeleton();
@@ -2003,6 +2035,11 @@ $("edit-form").addEventListener("submit", async (e) => {
 });
 
 boot();
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshOrdersIfDayChanged();
+});
+window.addEventListener("focus", () => refreshOrdersIfDayChanged());
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

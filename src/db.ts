@@ -39,6 +39,7 @@ export async function ensureSchema(db: Client): Promise<void> {
         updated_at INTEGER NOT NULL
       )`,
       `CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date)`,
     ],
     "write",
   );
@@ -187,12 +188,16 @@ export function deliveryDateOptions(now = Date.now()): DeliveryDateOption[] {
   return opts;
 }
 
-/** Before 17:00 → today; from 17:00 → tomorrow / next Monday on Sunday evening */
+/**
+ * Before 17:00 → today (first option).
+ * From 17:00 → tomorrow if listed; on Sunday evening opts[0] is already Monday.
+ */
 export function defaultDeliveryYmd(now = Date.now()): string {
   const opts = deliveryDateOptions(now);
   if (!opts.length) return vnYmd(now);
   if (vnHour(now) < 17) return opts[0].ymd;
-  // After 17:00: first option is already tomorrow (or Monday on Sunday)
+  const today = vnYmd(now);
+  if (opts[0].ymd === today && opts[1]) return opts[1].ymd;
   return opts[0].ymd;
 }
 
