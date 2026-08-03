@@ -8,6 +8,7 @@ const editOrderModal = $("edit-order-modal");
 const editModal = $("edit-modal");
 const deleteModal = $("delete-modal");
 const deleteOrderModal = $("delete-order-modal");
+const printConfirmModal = $("print-confirm-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -56,6 +57,8 @@ let editingOrder = null;
 let editOrderItems = [];
 /** @type {string[]} */
 let pendingDeleteOrderIds = [];
+/** @type {string[]} */
+let pendingPrintIds = [];
 /** @type {File|null} */
 let pendingImageFile = null;
 let previewObjectUrl = "";
@@ -481,7 +484,8 @@ function anyModalOpen() {
     !editOrderModal.classList.contains("hidden") ||
     !editModal.classList.contains("hidden") ||
     !deleteModal.classList.contains("hidden") ||
-    !deleteOrderModal.classList.contains("hidden")
+    !deleteOrderModal.classList.contains("hidden") ||
+    !printConfirmModal?.classList.contains("hidden")
   );
 }
 
@@ -766,8 +770,8 @@ function openCreateOrder() {
     "delivery_date",
     defaultDeliveryYmd(),
   );
-  const trua = document.querySelector('input[name="delivery_slot"][value="trua"]');
-  if (trua instanceof HTMLInputElement) trua.checked = true;
+  const chieu = document.querySelector('input[name="delivery_slot"][value="chieu"]');
+  if (chieu instanceof HTMLInputElement) chieu.checked = true;
   renderCartLines();
   renderProductList(orderMenuEl, { manage: false });
   orderModal.classList.remove("hidden");
@@ -1027,6 +1031,32 @@ function exportOrdersPdfA6(ids) {
       : "Phiếu A6 — chọn máy in hoặc Save as PDF",
   );
   return list.map((o) => o.id);
+}
+
+function openPrintConfirm(ids) {
+  pendingPrintIds = [...new Set(ids.filter(Boolean))];
+  if (!pendingPrintIds.length) return;
+  const n = pendingPrintIds.length;
+  const title = $("print-confirm-title");
+  const text = $("print-confirm-text");
+  if (title) title.textContent = n > 1 ? `In ${n} phiếu đơn?` : "In phiếu đơn?";
+  if (text) {
+    text.textContent =
+      n > 1
+        ? `Xác nhận in ${n} phiếu A6. Đơn chưa in sẽ chuyển sang Đã in.`
+        : "Xác nhận in phiếu A6. Đơn sẽ chuyển sang Đã in.";
+  }
+  printConfirmModal?.classList.remove("hidden");
+  printConfirmModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("confirm-print-order")?.focus());
+}
+
+function closePrintConfirm() {
+  pendingPrintIds = [];
+  printConfirmModal?.classList.add("hidden");
+  printConfirmModal?.setAttribute("aria-hidden", "true");
+  lockBody(false);
 }
 
 let printBusy = false;
@@ -2034,7 +2064,24 @@ $("bulk-export-pdf")?.addEventListener("click", () => {
     toast("Chọn ít nhất 1 đơn để in");
     return;
   }
-  printOrdersAndMarkPrinted(ids);
+  openPrintConfirm(ids);
+});
+
+$("confirm-print-order")?.addEventListener("click", async () => {
+  const ids = pendingPrintIds.slice();
+  closePrintConfirm();
+  if (ids.length) await printOrdersAndMarkPrinted(ids);
+});
+
+printConfirmModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (
+    t.hasAttribute("data-close-print-confirm") ||
+    t.closest("[data-close-print-confirm]")
+  ) {
+    closePrintConfirm();
+  }
 });
 
 $("bulk-delete")?.addEventListener("click", () => {
@@ -2084,7 +2131,7 @@ ordersEl.addEventListener("click", (e) => {
     if (!order || !id) return;
     const cur = normalizeStatus(order.status);
     if (cur === "pending") {
-      printOrdersAndMarkPrinted([id]);
+      openPrintConfirm([id]);
     } else if (cur === "printed") {
       setOrderStatus(id, "done");
     } else {
