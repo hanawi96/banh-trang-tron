@@ -891,7 +891,7 @@ body.bulk-open .tabbar {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .order-bulk-info strong {
@@ -902,6 +902,23 @@ body.bulk-open .tabbar {
 .order-bulk-info em {
   font-style: normal;
   color: var(--accent-2);
+}
+
+.order-bulk-servings {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(16, 35, 28, 0.05);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.order-bulk-servings[hidden] {
+  display: none;
 }
 
 .bulk-clear {
