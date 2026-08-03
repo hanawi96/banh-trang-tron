@@ -886,6 +886,22 @@ function openVisibleIds() {
     .map((o) => o.id);
 }
 
+/** Thanh bánh tráng / suất theo size */
+const BARS_PER_NHO = 2.5;
+const BARS_PER_TO = 5;
+
+/** @param {number} n */
+function formatBars(n) {
+  const rounded = Math.round(Number(n) * 2) / 2;
+  if (!Number.isFinite(rounded) || rounded <= 0) return "0";
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/** @param {'nho'|'to'|string} size */
+function barsPerServing(size) {
+  return normalizeSize(size) === "to" ? BARS_PER_TO : BARS_PER_NHO;
+}
+
 /** Tổng suất theo tên món + size từ danh sách đơn
  * @param {Array<{items?: unknown}>} orders
  */
@@ -893,6 +909,7 @@ function summarizeOrderServings(orders) {
   /** @type {Map<string, {name:string,size:'nho'|'to',qty:number}>} */
   const map = new Map();
   let total = 0;
+  let bars = 0;
   for (const order of orders) {
     if (!order || !Array.isArray(order.items)) continue;
     for (const item of order.items) {
@@ -905,6 +922,7 @@ function summarizeOrderServings(orders) {
       if (prev) prev.qty += qty;
       else map.set(key, { name, size, qty });
       total += qty;
+      bars += qty * barsPerServing(size);
     }
   }
   const rows = [...map.values()].sort((a, b) => {
@@ -915,7 +933,7 @@ function summarizeOrderServings(orders) {
   const parts = rows.map(
     (p) => `${p.qty} suất ${p.name} size ${sizeLabel(p.size).toLowerCase()}`,
   );
-  return { total, rows, parts };
+  return { total, rows, parts, bars };
 }
 
 /** Tổng suất từ các đơn đang checkbox */
@@ -954,11 +972,11 @@ function updateBulkBar() {
       servingsEl.hidden = true;
       servingsEl.textContent = "";
     } else {
-      const { total, parts } = summarizeSelectedServings();
+      const { total, parts, bars } = summarizeSelectedServings();
       servingsEl.hidden = false;
       servingsEl.textContent = parts.length
-        ? `Tổng ${total} suất (${parts.join(" + ")})`
-        : `Tổng 0 suất`;
+        ? `Tổng ${total} suất · ${formatBars(bars)} thanh bánh tráng (${parts.join(" + ")})`
+        : `Tổng 0 suất · 0 thanh bánh tráng`;
     }
   }
 }
@@ -1019,29 +1037,38 @@ function buildOrderSlipHtml(order, index, total, half) {
 
 /** Trang A6 đầu: tổng kết suất cần làm (to, rõ) */
 function buildPrintSummaryPageHtml(list) {
-  const { total, rows } = summarizeOrderServings(list);
+  const { total, rows, bars } = summarizeOrderServings(list);
   const printedLabel = formatVnDateTime(Date.now());
   const dense = rows.length >= 8 ? " sum-dense" : rows.length >= 5 ? " sum-mid" : "";
+  const barsText = formatBars(bars);
   const rowsHtml = rows.length
     ? rows
-        .map(
-          (r) => `<li>
+        .map((r) => {
+          const rowBars = formatBars(r.qty * barsPerServing(r.size));
+          return `<li>
       <span class="sum-qty">${r.qty}</span>
-      <span class="sum-name">${escapeHtml(r.name)}</span>
+      <span class="sum-name">${escapeHtml(r.name)}<em>${rowBars} thanh</em></span>
       <span class="sum-size">Size ${escapeHtml(sizeLabel(r.size))}</span>
-    </li>`,
-        )
+    </li>`;
+        })
         .join("")
     : `<li class="sum-empty">Chưa có suất</li>`;
 
   return `<section class="page page-summary${dense}">
   <div class="sum-brand">Bánh tráng cuộn</div>
   <h1 class="sum-title">Tổng kết làm bánh</h1>
-  <p class="sum-meta">${list.length} đơn${printedLabel ? ` · In ${escapeHtml(printedLabel)}` : ""}</p>
-  <div class="sum-total">
-    <span class="sum-total-label">Tổng</span>
-    <strong class="sum-total-num">${total}</strong>
-    <span class="sum-total-unit">suất</span>
+  <p class="sum-meta">${list.length} đơn${printedLabel ? ` · In ${escapeHtml(printedLabel)}` : ""} · Nhỏ ${BARS_PER_NHO} thanh · To ${BARS_PER_TO} thanh</p>
+  <div class="sum-stats">
+    <div class="sum-total">
+      <span class="sum-total-label">Tổng</span>
+      <strong class="sum-total-num">${total}</strong>
+      <span class="sum-total-unit">suất</span>
+    </div>
+    <div class="sum-total sum-bars">
+      <span class="sum-total-label">Cần</span>
+      <strong class="sum-total-num">${escapeHtml(barsText)}</strong>
+      <span class="sum-total-unit">thanh</span>
+    </div>
   </div>
   <ul class="sum-list">${rowsHtml}</ul>
 </section>`;
@@ -1082,13 +1109,16 @@ box-sizing:border-box
 .sum-brand{font-size:10pt;font-weight:800;letter-spacing:-.02em}
 .sum-title{font-size:16pt;font-weight:800;letter-spacing:-.03em;line-height:1.15}
 .sum-meta{font-size:8.5pt;font-weight:600;color:#444}
+.sum-stats{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm}
 .sum-total{
-display:flex;align-items:baseline;justify-content:center;gap:2.5mm;
-padding:3.5mm 3mm;border:2pt solid #111;border-radius:2mm;text-align:center
+display:flex;align-items:baseline;justify-content:center;gap:2mm;
+padding:3mm 2mm;border:2pt solid #111;border-radius:2mm;text-align:center
 }
-.sum-total-label{font-size:11pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.sum-total-num{font-size:28pt;font-weight:800;letter-spacing:-.04em;line-height:1}
-.sum-total-unit{font-size:12pt;font-weight:700}
+.sum-bars{border-style:solid;background:#111;color:#fff}
+.sum-bars .sum-total-label,.sum-bars .sum-total-unit{color:#fff}
+.sum-total-label{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.sum-total-num{font-size:22pt;font-weight:800;letter-spacing:-.04em;line-height:1}
+.sum-total-unit{font-size:10pt;font-weight:700}
 .sum-list{
 list-style:none;flex:1;min-height:0;overflow:hidden;
 display:flex;flex-direction:column;justify-content:flex-start;gap:2.2mm;
@@ -1099,26 +1129,29 @@ display:grid;grid-template-columns:14mm 1fr auto;align-items:center;gap:2.5mm;
 padding:2.2mm 2mm;border-bottom:0.8pt solid #ddd
 }
 .sum-list .sum-qty{font-size:18pt;font-weight:800;letter-spacing:-.03em;line-height:1;text-align:right}
-.sum-list .sum-name{font-size:11pt;font-weight:700;letter-spacing:-.02em;min-width:0;word-break:break-word}
+.sum-list .sum-name{font-size:11pt;font-weight:700;letter-spacing:-.02em;min-width:0;word-break:break-word;line-height:1.2}
+.sum-list .sum-name em{display:block;margin-top:.4mm;font-style:normal;font-size:8.5pt;font-weight:700;color:#333}
 .sum-list .sum-size{
 font-size:10pt;font-weight:800;white-space:nowrap;
 padding:1.2mm 2.2mm;border:1.2pt solid #111;border-radius:1.2mm
 }
 .sum-list .sum-empty{display:block;text-align:center;color:#666;font-size:10pt;border:0}
 .sum-mid .sum-title{font-size:14pt}
-.sum-mid .sum-total-num{font-size:24pt}
+.sum-mid .sum-total-num{font-size:18pt}
 .sum-mid .sum-list{gap:1.4mm}
 .sum-mid .sum-list li{padding:1.6mm 1.5mm}
 .sum-mid .sum-list .sum-qty{font-size:15pt}
 .sum-mid .sum-list .sum-name{font-size:9.5pt}
+.sum-mid .sum-list .sum-name em{font-size:7.5pt}
 .sum-mid .sum-list .sum-size{font-size:8.5pt;padding:1mm 1.8mm}
 .sum-dense .sum-title{font-size:12pt}
-.sum-dense .sum-total{padding:2.5mm 2mm}
-.sum-dense .sum-total-num{font-size:20pt}
+.sum-dense .sum-total{padding:2mm 1.5mm}
+.sum-dense .sum-total-num{font-size:15pt}
 .sum-dense .sum-list{gap:1mm}
 .sum-dense .sum-list li{padding:1.2mm 1mm;gap:1.8mm;grid-template-columns:11mm 1fr auto}
 .sum-dense .sum-list .sum-qty{font-size:13pt}
 .sum-dense .sum-list .sum-name{font-size:8.5pt}
+.sum-dense .sum-list .sum-name em{font-size:7pt}
 .sum-dense .sum-list .sum-size{font-size:7.5pt;padding:.8mm 1.4mm}
 .slip{
 position:absolute;left:0;right:0;width:105mm;height:70mm;
@@ -1413,7 +1446,7 @@ function renderOrders(orders) {
           ? "Hoàn tác · Đã in"
           : "Hoàn tác"
         : status === "printed"
-          ? `${CHECK_ICON}<span>Đã in · Đánh dấu đã giao</span>`
+          ? `${CHECK_ICON}<span>Đánh dấu đã giao</span>`
           : `${PRINT_ICON}<span>In đơn</span>`;
     const quickDeliverBtn =
       status === "pending"
