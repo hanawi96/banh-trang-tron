@@ -7,7 +7,10 @@ import {
   getDb,
   nowMs,
   parseDateRangeKey,
+  applyOrdersStatus,
   parseDeliveryDate,
+  parseOrderStatus,
+  parseTs,
   rangeVn,
   todayRangeVn,
   upcomingDeliveryYmdRange,
@@ -212,7 +215,7 @@ app.get("/api/orders", async (c) => {
     const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
     const { start: createdStart, end: createdEnd } = todayRangeVn();
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
             FROM orders
             WHERE
               (delivery_date >= ? AND delivery_date < ?)
@@ -235,7 +238,7 @@ app.get("/api/orders", async (c) => {
   } else {
     const { start, end } = rangeVn(rangeKey);
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
             FROM orders
             WHERE created_at >= ? AND created_at < ?
             ORDER BY
@@ -261,7 +264,9 @@ app.get("/api/orders", async (c) => {
     phone: row.phone ? String(row.phone) : "",
     delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
     delivery_date: row.delivery_date ? String(row.delivery_date) : "",
-    status: String(row.status || "pending") === "done" ? "done" : "pending",
+    status: parseOrderStatus(row.status),
+    printed_at: parseTs(row.printed_at),
+    delivered_at: parseTs(row.delivered_at),
     created_at: Number(row.created_at),
   }));
 
@@ -497,29 +502,42 @@ app.put("/api/orders/:id", async (c) => {
 app.patch("/api/orders/:id/status", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ status?: string }>().catch(() => null);
-  const status = body?.status === "done" ? "done" : body?.status === "pending" ? "pending" : "";
+  const raw = body?.status;
+  const status =
+    raw === "done" || raw === "printed" || raw === "pending"
+      ? raw
+      : "";
   if (!status) {
     return c.json({ error: "Trạng thái không hợp lệ" }, 400);
   }
 
   const db = getDb(c.env);
   await ensureSchema(db);
-  const result = await db.execute({
-    sql: `UPDATE orders SET status = ? WHERE id = ?`,
-    args: [status, id],
+  const existing = await db.execute({
+    sql: `SELECT id, printed_at, delivered_at FROM orders WHERE id = ? LIMIT 1`,
+    args: [id],
   });
-  if (result.rowsAffected === 0) {
+  if (!existing.rows.length) {
     return c.json({ error: "Không tìm thấy đơn" }, 404);
   }
+  const { at } = await applyOrdersStatus(db, [id], status);
+  const prevPrinted = parseTs(existing.rows[0]?.printed_at);
+  const printed_at =
+    status === "pending" ? null : status === "printed" ? prevPrinted || at : prevPrinted || at;
+  const delivered_at = status === "done" ? at : null;
 
-  return c.json({ ok: true, id, status });
+  return c.json({ ok: true, id, status, printed_at, delivered_at, at });
 });
 
 app.post("/api/orders/status-bulk", async (c) => {
   const body = await c.req
     .json<{ ids?: string[]; status?: string }>()
     .catch(() => null);
-  const status = body?.status === "done" ? "done" : body?.status === "pending" ? "pending" : "";
+  const raw = body?.status;
+  const status =
+    raw === "done" || raw === "printed" || raw === "pending"
+      ? raw
+      : "";
   const ids = Array.isArray(body?.ids)
     ? [...new Set(body.ids.map((id) => String(id).slice(0, 64)).filter(Boolean))].slice(0, 100)
     : [];
@@ -529,13 +547,9 @@ app.post("/api/orders/status-bulk", async (c) => {
 
   const db = getDb(c.env);
   await ensureSchema(db);
-  const placeholders = ids.map(() => "?").join(", ");
-  await db.execute({
-    sql: `UPDATE orders SET status = ? WHERE id IN (${placeholders})`,
-    args: [status, ...ids],
-  });
+  const { at } = await applyOrdersStatus(db, ids, status);
 
-  return c.json({ ok: true, status, ids });
+  return c.json({ ok: true, status, ids, at });
 });
 
 app.delete("/api/orders/:id", async (c) => {

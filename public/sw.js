@@ -1,5 +1,5 @@
 /* Bánh tráng trộn PWA — bump SHELL_CACHE when shipping shell changes */
-const SHELL_CACHE = "bt-shell-v43";
+const SHELL_CACHE = "bt-shell-v49";
 /** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
 const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
@@ -77,6 +77,8 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+  // Không chặn blob/data (in phiếu) hay cross-origin
+  if (url.protocol === "blob:" || url.protocol === "data:") return;
   if (url.origin !== self.location.origin) return;
 
   // API always network — never stale orders/stats

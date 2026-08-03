@@ -26,6 +26,8 @@ async function runEnsureSchema(db: Client): Promise<void> {
         delivery_slot TEXT,
         delivery_date TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
+        printed_at INTEGER,
+        delivered_at INTEGER,
         created_at INTEGER NOT NULL
       )`,
       `CREATE TABLE IF NOT EXISTS products (
@@ -50,6 +52,8 @@ async function runEnsureSchema(db: Client): Promise<void> {
     "delivery_slot TEXT",
     "delivery_date TEXT",
     "status TEXT NOT NULL DEFAULT 'pending'",
+    "printed_at INTEGER",
+    "delivered_at INTEGER",
   ]) {
     try {
       await db.execute(`ALTER TABLE orders ADD COLUMN ${col}`);
@@ -94,6 +98,8 @@ export type OrderRow = {
   delivery_slot: string | null;
   delivery_date: string | null;
   status: string | null;
+  printed_at: number | null;
+  delivered_at: number | null;
   created_at: number;
 };
 
@@ -228,7 +234,65 @@ export function parseDeliveryDate(
   return allowed.has(ymd) ? ymd : null;
 }
 
-export type OrderStatus = "pending" | "done";
+/** pending=chưa in → printed=đã in → done=đã giao */
+export type OrderStatus = "pending" | "printed" | "done";
+
+export function parseOrderStatus(raw: unknown): OrderStatus {
+  const s = String(raw || "");
+  if (s === "done") return "done";
+  if (s === "printed") return "printed";
+  return "pending";
+}
+
+export function parseTs(raw: unknown): number | null {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Cập nhật status + mốc giờ VN (lưu unix ms, format bằng Asia/Ho_Chi_Minh).
+ * - printed: giữ printed_at lần đầu, xóa delivered_at (hoàn tác giao)
+ * - done: set delivered_at; bổ sung printed_at nếu thiếu
+ * - pending: xóa cả hai mốc
+ */
+export async function applyOrdersStatus(
+  db: Client,
+  ids: string[],
+  status: OrderStatus,
+): Promise<{ at: number }> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return { at: nowMs() };
+  const at = nowMs();
+  const placeholders = unique.map(() => "?").join(", ");
+
+  if (status === "pending") {
+    await db.execute({
+      sql: `UPDATE orders
+            SET status = ?, printed_at = NULL, delivered_at = NULL
+            WHERE id IN (${placeholders})`,
+      args: [status, ...unique],
+    });
+  } else if (status === "printed") {
+    await db.execute({
+      sql: `UPDATE orders
+            SET status = ?,
+                printed_at = COALESCE(printed_at, ?),
+                delivered_at = NULL
+            WHERE id IN (${placeholders})`,
+      args: [status, at, ...unique],
+    });
+  } else {
+    await db.execute({
+      sql: `UPDATE orders
+            SET status = ?,
+                printed_at = COALESCE(printed_at, ?),
+                delivered_at = ?
+            WHERE id IN (${placeholders})`,
+      args: [status, at, at, ...unique],
+    });
+  }
+  return { at };
+}
 
 export const VN_TZ = "Asia/Ho_Chi_Minh";
 const DAY_MS = 24 * 60 * 60 * 1000;
