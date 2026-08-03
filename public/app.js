@@ -907,8 +907,10 @@ function updateBulkBar() {
     n > 0 && n === openIds.length ? "Bỏ chọn" : "Chọn tất cả";
 }
 
-/** A6 slip HTML for one order — print via browser → Save as PDF */
-function buildOrderSlipHtml(order, index, total) {
+/** A6 half-slip HTML for one order (2 slips / sheet, cut in half)
+ * @param {'top'|'bottom'} half
+ */
+function buildOrderSlipHtml(order, index, total, half) {
   const customer = formatCustomerName(order.customer) || "Khách";
   const phone = (order.phone || "").trim();
   const note = (order.note || "").trim();
@@ -927,15 +929,16 @@ function buildOrderSlipHtml(order, index, total) {
           const size = sizeLabel(i.size);
           const name = escapeHtml(i.name || "Món");
           const sizeBit = size
-            ? `<span class="sz">${escapeHtml(size)}</span>`
+            ? `<span class="sz">Size: ${escapeHtml(size)}</span>`
             : "";
           return `<li><span class="qty">${qty}×</span><span class="nm">${name}</span>${sizeBit}</li>`;
         })
         .join("")
     : `<li class="empty-line">Chưa có món</li>`;
-  const dense = items.length >= 6 ? " slip-dense" : "";
+  const dense = items.length >= 5 ? " slip-dense" : "";
+  const halfClass = half === "bottom" ? "slip-bottom" : "slip-top";
 
-  return `<article class="slip${dense}">
+  return `<article class="slip ${halfClass}${dense}">
   <header class="slip-head">
     <div class="slip-brand">Bánh tráng cuộn</div>
     <div class="slip-meta">
@@ -952,10 +955,27 @@ function buildOrderSlipHtml(order, index, total) {
   <ul class="slip-items">${itemsHtml}</ul>
   ${note ? `<div class="slip-note"><span>Lưu ý</span>${escapeHtml(note)}</div>` : ""}
   <footer class="slip-foot">
-    <span>Tổng</span>
+    <span>Tổng tiền:</span>
     <strong>${escapeHtml(formatVnd(order.total))}</strong>
   </footer>
 </article>`;
+}
+
+/** Group slips into A6 pages — 2 half-slips per sheet with cut guide */
+function buildPrintPagesHtml(list) {
+  const total = list.length;
+  const pages = [];
+  for (let i = 0; i < total; i += 2) {
+    const top = buildOrderSlipHtml(list[i], i, total, "top");
+    const bottom =
+      i + 1 < total
+        ? buildOrderSlipHtml(list[i + 1], i + 1, total, "bottom")
+        : `<article class="slip slip-bottom slip-blank" aria-hidden="true"></article>`;
+    pages.push(
+      `<section class="page">${top}<div class="cut-guide" aria-hidden="true"><span>cắt đôi</span></div>${bottom}</section>`,
+    );
+  }
+  return pages.join("\n");
 }
 
 const A6_PRINT_CSS = `@page{size:A6 portrait;margin:0}
@@ -963,49 +983,69 @@ const A6_PRINT_CSS = `@page{size:A6 portrait;margin:0}
 html,body{width:105mm;background:#fff;color:#111;
 font-family:"Segoe UI","Roboto","Helvetica Neue",Arial,sans-serif;
 -webkit-print-color-adjust:exact;print-color-adjust:exact}
-.slip{
-width:105mm;height:148mm;padding:7.5mm 7mm 6.5mm;
-display:flex;flex-direction:column;gap:3.2mm;overflow:hidden
+/* Một .page = đúng 1 tờ A6; 2 slip absolute nửa trên/dưới — tránh flex min-height đẩy sang tờ 2 */
+.page{
+position:relative;width:105mm;height:148mm;overflow:hidden;
+break-inside:avoid;page-break-inside:avoid
 }
-.slip+.slip{break-before:page;page-break-before:always}
-.slip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:3mm}
-.slip-brand{font-size:11pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
-.slip-meta{text-align:right;font-size:7.5pt;color:#444;line-height:1.35;white-space:nowrap}
+.page+.page{break-before:page;page-break-before:always}
+.slip{
+position:absolute;left:0;right:0;width:105mm;height:74mm;
+padding:4.5mm 5.5mm 4mm;overflow:hidden;
+display:flex;flex-direction:column;gap:1.8mm;min-height:0
+}
+.slip-top{top:0}
+.slip-bottom{top:74mm}
+.slip-blank{visibility:hidden}
+.cut-guide{
+position:absolute;left:0;right:0;top:74mm;z-index:2;
+height:0;border-top:0.7pt dashed #999;pointer-events:none
+}
+.cut-guide span{
+position:absolute;left:50%;top:-1.4mm;transform:translate(-50%,-50%);
+font-size:6pt;font-weight:600;color:#888;letter-spacing:.02em;
+background:#fff;padding:0 2mm;white-space:nowrap
+}
+.slip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:2mm;flex:0 0 auto}
+.slip-brand{font-size:9pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.slip-meta{text-align:right;font-size:6.5pt;color:#444;line-height:1.3;white-space:nowrap}
 .slip-when{
-font-size:10pt;font-weight:700;text-align:center;
-padding:2.2mm 3mm;border:1.2pt solid #111;border-radius:1.5mm;
-letter-spacing:.01em}
-.slip-customer{text-align:center;padding:0 1mm}
-.slip-name{font-size:14pt;font-weight:800;letter-spacing:-.02em;line-height:1.2;word-break:break-word}
-.slip-phone{margin-top:1mm;font-size:10pt;font-weight:600;color:#222}
+font-size:8.5pt;font-weight:700;text-align:center;flex:0 0 auto;
+padding:1.4mm 2.5mm;border:1pt solid #111;border-radius:1.2mm;
+letter-spacing:.01em
+}
+.slip-customer{text-align:center;padding:0 .5mm;flex:0 0 auto}
+.slip-name{font-size:11.5pt;font-weight:800;letter-spacing:-.02em;line-height:1.15;word-break:break-word}
+.slip-phone{margin-top:.5mm;font-size:8.5pt;font-weight:600;color:#222}
 .slip-items{
-flex:1;list-style:none;border-top:1pt dashed #999;border-bottom:1pt dashed #999;
-padding:2.5mm 0;display:flex;flex-direction:column;justify-content:center;gap:1.6mm;
+flex:1 1 auto;list-style:none;border-top:0.8pt dashed #999;border-bottom:0.8pt dashed #999;
+padding:1.4mm 0;display:flex;flex-direction:column;justify-content:center;gap:1mm;
 min-height:0;overflow:hidden
 }
-.slip-items li{display:flex;align-items:baseline;gap:2mm;font-size:10.5pt;line-height:1.25}
-.slip-items .qty{font-weight:800;min-width:8mm;flex:0 0 auto}
+.slip-items li{display:flex;align-items:baseline;gap:1.5mm;font-size:9pt;line-height:1.2}
+.slip-items .qty{font-weight:800;min-width:6.5mm;flex:0 0 auto}
 .slip-items .nm{flex:1;font-weight:600;min-width:0;word-break:break-word}
-.slip-items .sz{flex:0 0 auto;font-size:8.5pt;font-weight:700;color:#333;white-space:nowrap}
-.slip-items .empty-line{color:#666;font-size:9.5pt;justify-content:center}
-.slip-note{font-size:9pt;line-height:1.3;padding:1.5mm 2mm;background:#f3f3f3;border-radius:1.2mm}
-.slip-note span{display:block;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.6mm}
+.slip-items .sz{flex:0 0 auto;font-size:7.5pt;font-weight:700;color:#333;white-space:nowrap}
+.slip-items .empty-line{color:#666;font-size:8.5pt;justify-content:center}
+.slip-note{font-size:7.5pt;line-height:1.25;padding:1mm 1.5mm;background:#f3f3f3;border-radius:1mm;flex:0 0 auto;overflow:hidden}
+.slip-note span{display:block;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.4mm}
 .slip-foot{
-display:flex;align-items:baseline;justify-content:space-between;gap:3mm;
-padding-top:1mm;font-size:10pt
+display:flex;align-items:baseline;justify-content:space-between;gap:2mm;
+padding-top:.4mm;font-size:8.5pt;flex:0 0 auto
 }
-.slip-foot strong{font-size:13pt;font-weight:800;letter-spacing:-.02em}
-.slip-dense .slip-name{font-size:12pt}
-.slip-dense .slip-items{gap:1mm}
-.slip-dense .slip-items li{font-size:9pt}
-.slip-dense .slip-items .sz{font-size:7.5pt}
+.slip-foot strong{font-size:11pt;font-weight:800;letter-spacing:-.02em}
+.slip-dense .slip-name{font-size:10pt}
+.slip-dense .slip-items{gap:.7mm}
+.slip-dense .slip-items li{font-size:8pt}
+.slip-dense .slip-items .sz{font-size:7pt}
 @media screen{
-body{margin:12px auto;box-shadow:0 0 0 1px #ddd}
-.slip{outline:1px dashed #ccc;margin:0 auto 12px}
+body{margin:12px auto}
+.page{outline:1px dashed #ccc;margin:0 auto 12px;box-shadow:0 0 0 1px #ddd}
 }`;
 
 /**
  * In phiếu A6 qua iframe ẩn (không mở tab — tránh Chrome blank about:blank).
+ * 2 đơn / tờ A6 (cắt đôi).
  * @param {string[]} ids
  * @returns {string[]|null}
  */
@@ -1017,13 +1057,12 @@ function exportOrdersPdfA6(ids) {
     return null;
   }
 
-  const slips = list
-    .map((o, i) => buildOrderSlipHtml(o, i, list.length))
-    .join("\n");
+  const sheets = Math.ceil(list.length / 2);
+  const pages = buildPrintPagesHtml(list);
   const html = `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/>
-<title>Phiếu giao A6 (${list.length} đơn)</title>
+<title>Phiếu giao A6 (${list.length} đơn · ${sheets} tờ)</title>
 <style>${A6_PRINT_CSS}</style>
-</head><body>${slips}</body></html>`;
+</head><body>${pages}</body></html>`;
 
   let iframe = document.getElementById("print-frame");
   if (!(iframe instanceof HTMLIFrameElement)) {
@@ -1062,8 +1101,8 @@ function exportOrdersPdfA6(ids) {
 
   toast(
     list.length > 1
-      ? `${list.length} phiếu A6 — chọn máy in hoặc Save as PDF`
-      : "Phiếu A6 — chọn máy in hoặc Save as PDF",
+      ? `${list.length} đơn · ${sheets} tờ A6 (2 đơn/tờ, cắt đôi)`
+      : "1 đơn · nửa tờ A6 (cắt theo đường giữa)",
   );
   return list.map((o) => o.id);
 }
@@ -1072,14 +1111,15 @@ function openPrintConfirm(ids) {
   pendingPrintIds = [...new Set(ids.filter(Boolean))];
   if (!pendingPrintIds.length) return;
   const n = pendingPrintIds.length;
+  const sheets = Math.ceil(n / 2);
   const title = $("print-confirm-title");
   const text = $("print-confirm-text");
   if (title) title.textContent = n > 1 ? `In ${n} phiếu đơn?` : "In phiếu đơn?";
   if (text) {
     text.textContent =
       n > 1
-        ? `Xác nhận in ${n} phiếu A6. Đơn chưa in sẽ chuyển sang Đã in.`
-        : "Xác nhận in phiếu A6. Đơn sẽ chuyển sang Đã in.";
+        ? `Xác nhận in ${n} đơn trên ${sheets} tờ A6 (2 đơn/tờ, cắt đôi). Đơn chưa in sẽ chuyển sang Đã in.`
+        : "Xác nhận in 1 đơn (nửa tờ A6). Đơn sẽ chuyển sang Đã in.";
   }
   printConfirmModal?.classList.remove("hidden");
   printConfirmModal?.setAttribute("aria-hidden", "false");
