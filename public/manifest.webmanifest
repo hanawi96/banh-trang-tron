@@ -1,7 +1,7 @@
 {
-  "name": "Bánh tráng trộn — Ghi đơn",
+  "name": "Bánh tráng cuộn — Ghi đơn",
   "short_name": "Ghi đơn",
-  "description": "App ghi đơn nội bộ bánh tráng trộn",
+  "description": "App ghi đơn nội bộ bánh tráng cuộn",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

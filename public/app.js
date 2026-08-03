@@ -937,7 +937,7 @@ function buildOrderSlipHtml(order, index, total) {
 
   return `<article class="slip${dense}">
   <header class="slip-head">
-    <div class="slip-brand">Bánh tráng trộn</div>
+    <div class="slip-brand">Bánh tráng cuộn</div>
     <div class="slip-meta">
       <span>#${escapeHtml(code)}</span>
       ${printedLabel ? `<span>In ${escapeHtml(printedLabel)}</span>` : ""}

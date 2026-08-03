@@ -51,7 +51,7 @@ export async function applySoldDeltas(
 const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
   {
     id: "bt-tron",
-    name: "Bánh tráng trộn",
+    name: "Bánh tráng cuộn",
     price: 25000,
     cost: 12000,
     price_large: 30000,
@@ -186,6 +186,12 @@ export async function ensureProducts(db: Client): Promise<void> {
     productsReady = true;
     return;
   }
+
+  // Đổi tên thương hiệu sản phẩm seed (một lần khi còn tên cũ)
+  await db.execute({
+    sql: `UPDATE products SET name = ? WHERE id = ? AND name = ?`,
+    args: ["Bánh tráng cuộn", "bt-tron", "Bánh tráng trộn"],
+  });
 
   for (const [id, cost] of Object.entries(DEFAULT_COST)) {
     await db.execute({
