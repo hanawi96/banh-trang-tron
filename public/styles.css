@@ -108,6 +108,12 @@ html.booting .tabbar {
   margin: 0 auto;
   min-height: 100dvh;
   padding: 14px 12px calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom));
+  overflow-x: clip;
+}
+
+.tab-panel {
+  min-width: 0;
+  max-width: 100%;
 }
 
 
@@ -912,6 +918,8 @@ body.bulk-open .tabbar {
 .order-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .order {
@@ -922,6 +930,9 @@ body.bulk-open .tabbar {
   background: var(--surface);
   border: 1px solid rgba(211, 224, 217, 0.75);
   box-shadow: 0 8px 24px rgba(16, 35, 28, 0.05);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .order-done {
@@ -1031,9 +1042,10 @@ body.bulk-open .tabbar {
 
 .order-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .order-head-left,
@@ -1045,19 +1057,20 @@ body.bulk-open .tabbar {
 }
 
 .order-head-left {
-  flex-wrap: nowrap;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
 }
 
 .order-badges {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
 .order-head-right {
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .order .time {
@@ -1202,6 +1215,10 @@ body.bulk-open .tabbar {
   font-size: 0.98rem;
   letter-spacing: -0.02em;
   line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .order-qty {
@@ -1275,7 +1292,7 @@ body.bulk-open .tabbar {
   justify-items: center;
   gap: 10px;
   padding: 22px 8px 18px;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
   border-radius: 22px;
   background:
     radial-gradient(120% 80% at 50% 0%, #d8f0e4 0%, transparent 55%),

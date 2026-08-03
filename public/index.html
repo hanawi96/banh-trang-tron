@@ -47,7 +47,7 @@
       <section id="tab-orders" class="tab-panel" data-tab="orders">
         <div class="home-cta">
           <p class="home-cta-sub">Tạo đơn nhanh cho khách</p>
-          <button type="button" class="btn primary home-cta-btn" id="open-create-order">
+          <button type="button" class="btn primary home-cta-btn" id="open-create-order" data-open-create-order>
             <span class="home-cta-icon" aria-hidden="true">+</span>
             <span>Thêm đơn hàng</span>
           </button>
@@ -75,6 +75,13 @@
       </section>
 
       <section id="tab-products" class="tab-panel hidden" data-tab="products">
+        <div class="home-cta">
+          <p class="home-cta-sub">Tạo đơn nhanh cho khách</p>
+          <button type="button" class="btn primary home-cta-btn" data-open-create-order>
+            <span class="home-cta-icon" aria-hidden="true">+</span>
+            <span>Thêm đơn hàng</span>
+          </button>
+        </div>
         <div id="menu" class="product-list"></div>
       </section>
 

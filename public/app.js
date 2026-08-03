@@ -2098,8 +2098,8 @@ editImageInput.addEventListener("change", () => {
   editPreview.src = previewObjectUrl;
 });
 
-$("open-create-order")?.addEventListener("click", () => {
-  openCreateOrder();
+document.querySelectorAll("[data-open-create-order]").forEach((btn) => {
+  btn.addEventListener("click", () => openCreateOrder());
 });
 
 $("show-order-phone")?.addEventListener("click", () => {
