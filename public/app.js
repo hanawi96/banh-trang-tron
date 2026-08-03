@@ -1043,14 +1043,13 @@ function buildPrintSummaryPageHtml(list) {
   const barsText = formatBars(bars);
   const rowsHtml = rows.length
     ? rows
-        .map((r) => {
-          const rowBars = formatBars(r.qty * barsPerServing(r.size));
-          return `<li>
+        .map(
+          (r) => `<li>
       <span class="sum-qty">${r.qty}</span>
-      <span class="sum-name">${escapeHtml(r.name)}<em>${rowBars} thanh</em></span>
+      <span class="sum-name">${escapeHtml(r.name)}</span>
       <span class="sum-size">Size ${escapeHtml(sizeLabel(r.size))}</span>
-    </li>`;
-        })
+    </li>`,
+        )
         .join("")
     : `<li class="sum-empty">Chưa có suất</li>`;
 
@@ -1103,54 +1102,55 @@ break-inside:avoid;page-break-inside:avoid
 }
 .page+.page{break-before:page;page-break-before:always}
 .page-summary{
-padding:7mm 6.5mm 6mm;display:flex;flex-direction:column;gap:3mm;
+padding:6mm 5.5mm 5mm;display:flex;flex-direction:column;gap:2.8mm;
 box-sizing:border-box
 }
-.sum-brand{font-size:10pt;font-weight:800;letter-spacing:-.02em}
-.sum-title{font-size:16pt;font-weight:800;letter-spacing:-.03em;line-height:1.15}
-.sum-meta{font-size:8.5pt;font-weight:600;color:#444}
-.sum-stats{display:flex;flex-direction:column;gap:2mm}
+.sum-brand{font-size:11pt;font-weight:800;letter-spacing:-.02em}
+.sum-title{font-size:18pt;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.sum-meta{font-size:9pt;font-weight:700;color:#333}
+.sum-stats{display:flex;flex-direction:column;gap:2.2mm}
 .sum-total{
 display:flex;align-items:baseline;justify-content:center;gap:2.5mm;
-padding:3mm 2.5mm;border:2pt solid #111;border-radius:2mm;text-align:center
+padding:3.5mm 2.5mm;border:2.2pt solid #111;border-radius:2mm;text-align:center
 }
-.sum-total-label{font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.sum-total-num{font-size:24pt;font-weight:800;letter-spacing:-.04em;line-height:1}
-.sum-total-unit{font-size:11pt;font-weight:700}
+.sum-total-label{font-size:12pt;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.sum-total-num{font-size:30pt;font-weight:800;letter-spacing:-.04em;line-height:1}
+.sum-total-unit{font-size:13pt;font-weight:800}
 .sum-list{
 list-style:none;flex:1;min-height:0;overflow:hidden;
-display:flex;flex-direction:column;justify-content:flex-start;gap:2.2mm;
+display:flex;flex-direction:column;justify-content:flex-start;gap:2mm;
 padding-top:1mm
 }
 .sum-list li{
-display:grid;grid-template-columns:14mm 1fr auto;align-items:center;gap:2.5mm;
-padding:2.2mm 2mm;border-bottom:0.8pt solid #ddd
+display:grid;grid-template-columns:16mm 1fr auto;align-items:center;gap:2.5mm;
+padding:2.4mm 1.5mm;border-bottom:1pt solid #ccc
 }
-.sum-list .sum-qty{font-size:18pt;font-weight:800;letter-spacing:-.03em;line-height:1;text-align:right}
-.sum-list .sum-name{font-size:11pt;font-weight:700;letter-spacing:-.02em;min-width:0;word-break:break-word;line-height:1.2}
-.sum-list .sum-name em{display:block;margin-top:.4mm;font-style:normal;font-size:8.5pt;font-weight:700;color:#333}
+.sum-list .sum-qty{font-size:22pt;font-weight:800;letter-spacing:-.03em;line-height:1;text-align:right}
+.sum-list .sum-name{font-size:13pt;font-weight:800;letter-spacing:-.02em;min-width:0;word-break:break-word;line-height:1.15}
 .sum-list .sum-size{
-font-size:10pt;font-weight:800;white-space:nowrap;
-padding:1.2mm 2.2mm;border:1.2pt solid #111;border-radius:1.2mm
+font-size:11pt;font-weight:800;white-space:nowrap;
+padding:1.4mm 2.4mm;border:1.4pt solid #111;border-radius:1.2mm
 }
-.sum-list .sum-empty{display:block;text-align:center;color:#666;font-size:10pt;border:0}
-.sum-mid .sum-title{font-size:14pt}
-.sum-mid .sum-total-num{font-size:20pt}
-.sum-mid .sum-list{gap:1.4mm}
-.sum-mid .sum-list li{padding:1.6mm 1.5mm}
-.sum-mid .sum-list .sum-qty{font-size:15pt}
-.sum-mid .sum-list .sum-name{font-size:9.5pt}
-.sum-mid .sum-list .sum-name em{font-size:7.5pt}
-.sum-mid .sum-list .sum-size{font-size:8.5pt;padding:1mm 1.8mm}
-.sum-dense .sum-title{font-size:12pt}
-.sum-dense .sum-total{padding:2mm 1.5mm}
-.sum-dense .sum-total-num{font-size:16pt}
-.sum-dense .sum-list{gap:1mm}
-.sum-dense .sum-list li{padding:1.2mm 1mm;gap:1.8mm;grid-template-columns:11mm 1fr auto}
-.sum-dense .sum-list .sum-qty{font-size:13pt}
-.sum-dense .sum-list .sum-name{font-size:8.5pt}
-.sum-dense .sum-list .sum-name em{font-size:7pt}
-.sum-dense .sum-list .sum-size{font-size:7.5pt;padding:.8mm 1.4mm}
+.sum-list .sum-empty{display:block;text-align:center;color:#666;font-size:11pt;border:0}
+.sum-mid .sum-title{font-size:16pt}
+.sum-mid .sum-total-num{font-size:26pt}
+.sum-mid .sum-total-label{font-size:11pt}
+.sum-mid .sum-total-unit{font-size:12pt}
+.sum-mid .sum-list{gap:1.5mm}
+.sum-mid .sum-list li{padding:1.8mm 1.2mm}
+.sum-mid .sum-list .sum-qty{font-size:18pt}
+.sum-mid .sum-list .sum-name{font-size:11.5pt}
+.sum-mid .sum-list .sum-size{font-size:10pt;padding:1.2mm 2mm}
+.sum-dense .sum-title{font-size:14pt}
+.sum-dense .sum-total{padding:2.5mm 2mm}
+.sum-dense .sum-total-num{font-size:22pt}
+.sum-dense .sum-total-label{font-size:10pt}
+.sum-dense .sum-total-unit{font-size:11pt}
+.sum-dense .sum-list{gap:1.2mm}
+.sum-dense .sum-list li{padding:1.4mm 1mm;gap:2mm;grid-template-columns:14mm 1fr auto}
+.sum-dense .sum-list .sum-qty{font-size:16pt}
+.sum-dense .sum-list .sum-name{font-size:10.5pt}
+.sum-dense .sum-list .sum-size{font-size:9pt;padding:1mm 1.6mm}
 .slip{
 position:absolute;left:0;right:0;width:105mm;height:70mm;
 padding:4.5mm 5.5mm 4mm;overflow:hidden;
@@ -1164,37 +1164,38 @@ position:absolute;left:0;right:0;top:74mm;z-index:2;
 height:0;border-top:1.6pt solid #111;pointer-events:none
 }
 .slip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:2mm;flex:0 0 auto}
-.slip-brand{font-size:9pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
-.slip-meta{text-align:right;font-size:6.5pt;color:#444;line-height:1.3;white-space:nowrap}
+.slip-brand{font-size:10pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.slip-meta{text-align:right;font-size:7pt;color:#444;line-height:1.3;white-space:nowrap}
 .slip-when{
-font-size:8.5pt;font-weight:700;text-align:center;flex:0 0 auto;
-padding:1.4mm 2.5mm;border:1pt solid #111;border-radius:1.2mm;
+font-size:10pt;font-weight:800;text-align:center;flex:0 0 auto;
+padding:1.6mm 2.5mm;border:1.2pt solid #111;border-radius:1.2mm;
 letter-spacing:.01em
 }
 .slip-customer{text-align:center;padding:0 .5mm;flex:0 0 auto}
-.slip-name{font-size:11.5pt;font-weight:800;letter-spacing:-.02em;line-height:1.15;word-break:break-word}
-.slip-phone{margin-top:.5mm;font-size:8.5pt;font-weight:600;color:#222}
+.slip-name{font-size:13pt;font-weight:800;letter-spacing:-.02em;line-height:1.15;word-break:break-word}
+.slip-phone{margin-top:.5mm;font-size:9.5pt;font-weight:700;color:#222}
 .slip-items{
 flex:1 1 auto;list-style:none;border-top:0.8pt dashed #999;border-bottom:0.8pt dashed #999;
-padding:1.4mm 0;display:flex;flex-direction:column;justify-content:center;gap:1mm;
+padding:1.6mm 0;display:flex;flex-direction:column;justify-content:center;gap:1.4mm;
 min-height:0;overflow:hidden
 }
-.slip-items li{display:flex;align-items:baseline;gap:1.5mm;font-size:9pt;line-height:1.2}
-.slip-items .qty{font-weight:800;min-width:6.5mm;flex:0 0 auto}
-.slip-items .nm{flex:1;font-weight:600;min-width:0;word-break:break-word}
-.slip-items .sz{flex:0 0 auto;font-size:7.5pt;font-weight:700;color:#333;white-space:nowrap}
-.slip-items .empty-line{color:#666;font-size:8.5pt;justify-content:center}
-.slip-note{font-size:7.5pt;line-height:1.25;padding:1mm 1.5mm;background:#f3f3f3;border-radius:1mm;flex:0 0 auto;overflow:hidden}
-.slip-note span{display:block;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.4mm}
+.slip-items li{display:flex;align-items:baseline;gap:2mm;font-size:13.5pt;line-height:1.2}
+.slip-items .qty{font-weight:800;min-width:8mm;flex:0 0 auto}
+.slip-items .nm{flex:1;font-weight:800;min-width:0;word-break:break-word}
+.slip-items .sz{flex:0 0 auto;font-size:10pt;font-weight:800;color:#111;white-space:nowrap}
+.slip-items .empty-line{color:#666;font-size:10pt;justify-content:center}
+.slip-note{font-size:8.5pt;line-height:1.25;padding:1mm 1.5mm;background:#f3f3f3;border-radius:1mm;flex:0 0 auto;overflow:hidden}
+.slip-note span{display:block;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.4mm}
 .slip-foot{
 display:flex;align-items:baseline;justify-content:space-between;gap:2mm;
-padding-top:.4mm;font-size:8.5pt;flex:0 0 auto
+padding-top:.6mm;font-size:11pt;font-weight:700;flex:0 0 auto
 }
-.slip-foot strong{font-size:11pt;font-weight:800;letter-spacing:-.02em}
-.slip-dense .slip-name{font-size:10pt}
-.slip-dense .slip-items{gap:.7mm}
-.slip-dense .slip-items li{font-size:8pt}
-.slip-dense .slip-items .sz{font-size:7pt}
+.slip-foot strong{font-size:17pt;font-weight:800;letter-spacing:-.02em}
+.slip-dense .slip-name{font-size:11.5pt}
+.slip-dense .slip-items{gap:1mm}
+.slip-dense .slip-items li{font-size:11.5pt}
+.slip-dense .slip-items .sz{font-size:9pt}
+.slip-dense .slip-foot strong{font-size:15pt}
 @media screen{
 body{margin:12px auto}
 .page{outline:1px dashed #ccc;margin:0 auto 12px;box-shadow:0 0 0 1px #ddd}
