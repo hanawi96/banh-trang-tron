@@ -728,35 +728,70 @@ function clearComposeInvalid(root = orderModal) {
   root?.querySelectorAll(".is-invalid").forEach((n) => n.classList.remove("is-invalid"));
 }
 
+const OPTIONAL_FIELDS = {
+  create: {
+    actions: "order-optional-actions",
+    phoneBtn: "show-order-phone",
+    noteBtn: "show-order-note",
+    phoneField: "order-phone-field",
+    noteField: "order-note-field",
+    phoneInput: "customer-phone",
+    noteInput: "order-note",
+  },
+  edit: {
+    actions: "edit-order-optional-actions",
+    phoneBtn: "show-edit-order-phone",
+    noteBtn: "show-edit-order-note",
+    phoneField: "edit-order-phone-field",
+    noteField: "edit-order-note-field",
+    phoneInput: "edit-order-phone",
+    noteInput: "edit-order-note",
+  },
+};
+
+/** Ẩn/hiện SĐT + note theo dữ liệu sẵn có */
+function syncOptionalFields(scope, { phone = "", note = "" } = {}) {
+  const cfg = OPTIONAL_FIELDS[scope];
+  if (!cfg) return;
+  const phoneVal = String(phone || "").trim();
+  const noteVal = String(note || "").trim();
+  const phoneInput = $(cfg.phoneInput);
+  const noteInput = $(cfg.noteInput);
+  if (phoneInput) phoneInput.value = phoneVal;
+  if (noteInput) noteInput.value = noteVal;
+
+  const showPhone = Boolean(phoneVal);
+  const showNote = Boolean(noteVal);
+  $(cfg.phoneField)?.classList.toggle("hidden", !showPhone);
+  $(cfg.noteField)?.classList.toggle("hidden", !showNote);
+  $(cfg.phoneBtn)?.classList.toggle("hidden", showPhone);
+  $(cfg.noteBtn)?.classList.toggle("hidden", showNote);
+  $(cfg.actions)?.classList.toggle("hidden", showPhone && showNote);
+}
+
+function revealOptionalField(scope, kind) {
+  const cfg = OPTIONAL_FIELDS[scope];
+  if (!cfg) return;
+  if (kind === "phone") {
+    $(cfg.phoneField)?.classList.remove("hidden");
+    $(cfg.phoneBtn)?.classList.add("hidden");
+    requestAnimationFrame(() => $(cfg.phoneInput)?.focus());
+  } else if (kind === "note") {
+    $(cfg.noteField)?.classList.remove("hidden");
+    $(cfg.noteBtn)?.classList.add("hidden");
+    requestAnimationFrame(() => $(cfg.noteInput)?.focus());
+  }
+  const phoneHidden = $(cfg.phoneBtn)?.classList.contains("hidden");
+  const noteHidden = $(cfg.noteBtn)?.classList.contains("hidden");
+  if (phoneHidden && noteHidden) $(cfg.actions)?.classList.add("hidden");
+}
+
 function resetOrderOptionalFields() {
-  const phoneField = $("order-phone-field");
-  const noteField = $("order-note-field");
-  const actions = $("order-optional-actions");
-  const phoneBtn = $("show-order-phone");
-  const noteBtn = $("show-order-note");
-  if ($("customer-phone")) $("customer-phone").value = "";
-  if ($("order-note")) $("order-note").value = "";
-  phoneField?.classList.add("hidden");
-  noteField?.classList.add("hidden");
-  phoneBtn?.classList.remove("hidden");
-  noteBtn?.classList.remove("hidden");
-  actions?.classList.remove("hidden");
+  syncOptionalFields("create", { phone: "", note: "" });
 }
 
 function revealOrderOptionalField(kind) {
-  const actions = $("order-optional-actions");
-  if (kind === "phone") {
-    $("order-phone-field")?.classList.remove("hidden");
-    $("show-order-phone")?.classList.add("hidden");
-    requestAnimationFrame(() => $("customer-phone")?.focus());
-  } else if (kind === "note") {
-    $("order-note-field")?.classList.remove("hidden");
-    $("show-order-note")?.classList.add("hidden");
-    requestAnimationFrame(() => $("order-note")?.focus());
-  }
-  const phoneHidden = $("show-order-phone")?.classList.contains("hidden");
-  const noteHidden = $("show-order-note")?.classList.contains("hidden");
-  if (phoneHidden && noteHidden) actions?.classList.add("hidden");
+  revealOptionalField("create", kind);
 }
 
 function openCreateOrder() {
@@ -1746,8 +1781,10 @@ function openEditOrderModal(order) {
   });
   $("edit-order-title").textContent = "Sửa đơn hàng";
   $("edit-order-customer").value = formatCustomerName(order.customer);
-  $("edit-order-phone").value = order.phone || "";
-  $("edit-order-note").value = order.note || "";
+  syncOptionalFields("edit", {
+    phone: order.phone || "",
+    note: order.note || "",
+  });
   renderDeliveryDateOptions(
     "edit-delivery-date-options",
     "edit_delivery_date",
@@ -2348,11 +2385,19 @@ document.querySelectorAll("[data-open-create-order]").forEach((btn) => {
 });
 
 $("show-order-phone")?.addEventListener("click", () => {
-  revealOrderOptionalField("phone");
+  revealOptionalField("create", "phone");
 });
 
 $("show-order-note")?.addEventListener("click", () => {
-  revealOrderOptionalField("note");
+  revealOptionalField("create", "note");
+});
+
+$("show-edit-order-phone")?.addEventListener("click", () => {
+  revealOptionalField("edit", "phone");
+});
+
+$("show-edit-order-note")?.addEventListener("click", () => {
+  revealOptionalField("edit", "note");
 });
 
 $("cart-clear")?.addEventListener("click", () => {

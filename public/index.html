@@ -297,7 +297,15 @@
                 aria-required="true"
               />
             </label>
-            <label class="field">
+            <div class="optional-actions" id="edit-order-optional-actions">
+              <button type="button" class="btn optional-add" id="show-edit-order-phone">
+                Thêm SĐT
+              </button>
+              <button type="button" class="btn optional-add" id="show-edit-order-note">
+                Thêm note
+              </button>
+            </div>
+            <label class="field hidden" id="edit-order-phone-field">
               <span>Số điện thoại</span>
               <input
                 id="edit-order-phone"
@@ -307,7 +315,7 @@
                 placeholder="09xx xxx xxx"
               />
             </label>
-            <label class="field">
+            <label class="field hidden" id="edit-order-note-field">
               <span>Lưu ý đơn hàng</span>
               <textarea
                 id="edit-order-note"
