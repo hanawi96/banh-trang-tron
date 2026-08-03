@@ -1109,16 +1109,14 @@ box-sizing:border-box
 .sum-brand{font-size:10pt;font-weight:800;letter-spacing:-.02em}
 .sum-title{font-size:16pt;font-weight:800;letter-spacing:-.03em;line-height:1.15}
 .sum-meta{font-size:8.5pt;font-weight:600;color:#444}
-.sum-stats{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm}
+.sum-stats{display:flex;flex-direction:column;gap:2mm}
 .sum-total{
-display:flex;align-items:baseline;justify-content:center;gap:2mm;
-padding:3mm 2mm;border:2pt solid #111;border-radius:2mm;text-align:center
+display:flex;align-items:baseline;justify-content:center;gap:2.5mm;
+padding:3mm 2.5mm;border:2pt solid #111;border-radius:2mm;text-align:center
 }
-.sum-bars{border-style:solid;background:#111;color:#fff}
-.sum-bars .sum-total-label,.sum-bars .sum-total-unit{color:#fff}
-.sum-total-label{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.sum-total-num{font-size:22pt;font-weight:800;letter-spacing:-.04em;line-height:1}
-.sum-total-unit{font-size:10pt;font-weight:700}
+.sum-total-label{font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.sum-total-num{font-size:24pt;font-weight:800;letter-spacing:-.04em;line-height:1}
+.sum-total-unit{font-size:11pt;font-weight:700}
 .sum-list{
 list-style:none;flex:1;min-height:0;overflow:hidden;
 display:flex;flex-direction:column;justify-content:flex-start;gap:2.2mm;
@@ -1137,7 +1135,7 @@ padding:1.2mm 2.2mm;border:1.2pt solid #111;border-radius:1.2mm
 }
 .sum-list .sum-empty{display:block;text-align:center;color:#666;font-size:10pt;border:0}
 .sum-mid .sum-title{font-size:14pt}
-.sum-mid .sum-total-num{font-size:18pt}
+.sum-mid .sum-total-num{font-size:20pt}
 .sum-mid .sum-list{gap:1.4mm}
 .sum-mid .sum-list li{padding:1.6mm 1.5mm}
 .sum-mid .sum-list .sum-qty{font-size:15pt}
@@ -1146,7 +1144,7 @@ padding:1.2mm 2.2mm;border:1.2pt solid #111;border-radius:1.2mm
 .sum-mid .sum-list .sum-size{font-size:8.5pt;padding:1mm 1.8mm}
 .sum-dense .sum-title{font-size:12pt}
 .sum-dense .sum-total{padding:2mm 1.5mm}
-.sum-dense .sum-total-num{font-size:15pt}
+.sum-dense .sum-total-num{font-size:16pt}
 .sum-dense .sum-list{gap:1mm}
 .sum-dense .sum-list li{padding:1.2mm 1mm;gap:1.8mm;grid-template-columns:11mm 1fr auto}
 .sum-dense .sum-list .sum-qty{font-size:13pt}
