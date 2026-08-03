@@ -116,7 +116,7 @@ function applyLocalTimeline(order, nextStatus) {
     order.printed_at = Number(order.printed_at) > 0 ? order.printed_at : at;
     order.delivered_at = null;
   } else {
-    order.printed_at = Number(order.printed_at) > 0 ? order.printed_at : at;
+    // done: giữ printed_at nếu có — giao nhanh không invent giờ in
     order.delivered_at = at;
   }
 }
@@ -1409,10 +1409,18 @@ function renderOrders(orders) {
     const checked = selectedOrderIds.has(o.id) ? "checked" : "";
     const actionBtn =
       status === "done"
-        ? "Hoàn tác · Đã in"
+        ? Number(o.printed_at) > 0
+          ? "Hoàn tác · Đã in"
+          : "Hoàn tác"
         : status === "printed"
           ? `${CHECK_ICON}<span>Đã in · Đánh dấu đã giao</span>`
           : `${PRINT_ICON}<span>In đơn</span>`;
+    const quickDeliverBtn =
+      status === "pending"
+        ? `<button type="button" class="order-status-btn order-deliver-btn" data-quick-deliver="${escapeHtml(o.id)}">
+            ${CHECK_ICON}<span>Đã giao</span>
+          </button>`
+        : "";
     const printedAtText = formatVnDateTime(o.printed_at);
     const deliveredAtText = formatVnDateTime(o.delivered_at);
     const timelineHtml =
@@ -1468,10 +1476,11 @@ function renderOrders(orders) {
         ${timelineHtml}
       </div>
       <div class="order-actions-wrap">
-        <div class="order-actions">
+        <div class="order-actions${status === "pending" ? " order-actions-pending" : ""}">
           <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}">
             ${actionBtn}
           </button>
+          ${quickDeliverBtn}
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
             ${EDIT_ICON}
           </button>
@@ -2328,6 +2337,12 @@ ordersEl.addEventListener("click", (e) => {
     if (id) setOrderStatus(id, "pending");
     return;
   }
+  const quickDeliverBtn = t.closest("[data-quick-deliver]");
+  if (quickDeliverBtn) {
+    const id = quickDeliverBtn.getAttribute("data-quick-deliver");
+    if (id) setOrderStatus(id, "done");
+    return;
+  }
   const statusBtn = t.closest("[data-toggle-status]");
   if (statusBtn) {
     const id = statusBtn.getAttribute("data-toggle-status");
@@ -2339,7 +2354,8 @@ ordersEl.addEventListener("click", (e) => {
     } else if (cur === "printed") {
       setOrderStatus(id, "done");
     } else {
-      setOrderStatus(id, "printed");
+      // Hoàn tác giao: về đã in nếu từng in, không thì về chưa in
+      setOrderStatus(id, Number(order.printed_at) > 0 ? "printed" : "pending");
     }
     return;
   }

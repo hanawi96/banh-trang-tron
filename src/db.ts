@@ -252,7 +252,7 @@ export function parseTs(raw: unknown): number | null {
 /**
  * Cập nhật status + mốc giờ VN (lưu unix ms, format bằng Asia/Ho_Chi_Minh).
  * - printed: giữ printed_at lần đầu, xóa delivered_at (hoàn tác giao)
- * - done: set delivered_at; bổ sung printed_at nếu thiếu
+ * - done: set delivered_at; giữ printed_at hiện có (không invent nếu giao nhanh)
  * - pending: xóa cả hai mốc
  */
 export async function applyOrdersStatus(
@@ -284,11 +284,9 @@ export async function applyOrdersStatus(
   } else {
     await db.execute({
       sql: `UPDATE orders
-            SET status = ?,
-                printed_at = COALESCE(printed_at, ?),
-                delivered_at = ?
+            SET status = ?, delivered_at = ?
             WHERE id IN (${placeholders})`,
-      args: [status, at, at, ...unique],
+      args: [status, at, ...unique],
     });
   }
   return { at };

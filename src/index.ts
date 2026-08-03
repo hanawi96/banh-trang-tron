@@ -523,7 +523,11 @@ app.patch("/api/orders/:id/status", async (c) => {
   const { at } = await applyOrdersStatus(db, [id], status);
   const prevPrinted = parseTs(existing.rows[0]?.printed_at);
   const printed_at =
-    status === "pending" ? null : status === "printed" ? prevPrinted || at : prevPrinted || at;
+    status === "pending"
+      ? null
+      : status === "printed"
+        ? prevPrinted || at
+        : prevPrinted;
   const delivered_at = status === "done" ? at : null;
 
   return c.json({ ok: true, id, status, printed_at, delivered_at, at });

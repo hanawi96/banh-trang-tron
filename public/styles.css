@@ -1077,6 +1077,10 @@ body.bulk-open .tabbar {
   align-items: center;
 }
 
+.order-actions-pending {
+  grid-template-columns: 1fr 1fr 42px 42px;
+}
+
 .order-undo-print {
   border: 0;
   background: transparent;
@@ -1121,6 +1125,11 @@ body.bulk-open .tabbar {
 
 .order-status-btn-pending {
   background: linear-gradient(180deg, #f59e0b 0%, #ea580c 100%);
+  color: #fff;
+}
+
+.order-deliver-btn {
+  background: linear-gradient(180deg, #18a86a 0%, #0f8a55 100%);
   color: #fff;
 }
 
