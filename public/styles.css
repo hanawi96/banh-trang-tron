@@ -328,7 +328,8 @@ html.booting .tabbar {
 }
 
 #print-confirm-modal,
-#deliver-confirm-modal {
+#deliver-confirm-modal,
+#prepare-modal {
   place-items: center;
   padding: 24px;
   z-index: 70;
@@ -876,6 +877,25 @@ body.confirm-open .order-bulk-popup {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(211, 224, 217, 0.75);
+  display: grid;
+  gap: 8px;
+}
+
+.prepare-open-btn {
+  width: 100%;
+  min-height: 42px;
+  border: 1.5px solid rgba(12, 122, 82, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f2fbf6 0%, #e5f6ee 100%);
+  color: var(--accent-2);
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+.prepare-open-btn:active {
+  transform: scale(0.99);
 }
 
 .order-filters {
@@ -1871,6 +1891,180 @@ body.bulk-open .tabbar {
   border-radius: 22px;
   box-shadow: 0 16px 40px rgba(16, 35, 28, 0.18);
   overflow: hidden;
+}
+
+.modal-sheet.modal-sheet-prepare {
+  width: min(100%, 420px);
+  max-height: min(88dvh, 680px);
+  margin: 0 auto;
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(12, 122, 82, 0.14);
+  padding: 18px 18px calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #f7fcf9 0%, #ffffff 42%, #ffffff 100%);
+  border: 1px solid rgba(12, 122, 82, 0.1);
+}
+
+.prepare-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prepare-kicker {
+  margin: 0 0 2px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.prepare-head h2 {
+  margin: 0;
+  font-size: 1.32rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.prepare-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.prepare-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 14px 10px;
+  border: 1px solid rgba(12, 122, 82, 0.16);
+  border-radius: 16px;
+  text-align: center;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(16, 35, 28, 0.03);
+}
+
+.prepare-stat-bars {
+  background: linear-gradient(165deg, #0c7a52 0%, #0a5f40 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 20px rgba(12, 122, 82, 0.22);
+}
+
+.prepare-stat-bars .prepare-stat-label {
+  color: rgba(255, 255, 255, 0.78);
+  opacity: 1;
+}
+
+.prepare-stat-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.prepare-stat-num {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-2);
+}
+
+.prepare-stat-bars .prepare-stat-num {
+  color: #fff;
+}
+
+.prepare-stat-unit {
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: var(--muted);
+}
+
+.prepare-stat-bars .prepare-stat-unit {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.prepare-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px dashed rgba(12, 122, 82, 0.22);
+}
+
+.prepare-list li {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px;
+  border-bottom: 1px solid rgba(211, 224, 217, 0.9);
+}
+
+.prepare-list li:last-child {
+  border-bottom: 0;
+}
+
+.prepare-qty {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--accent-2);
+}
+
+.prepare-name {
+  font-size: 0.98rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  min-width: 0;
+  word-break: break-word;
+  color: var(--ink);
+}
+
+.prepare-size {
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border: 1px solid rgba(12, 122, 82, 0.28);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.prepare-empty {
+  display: block;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 650;
+  padding: 20px 8px;
+  border: 0;
+}
+
+.modal-sheet-prepare .btn.primary {
+  margin-top: 2px;
+  border-radius: 14px;
+  min-height: 46px;
+  font-weight: 800;
 }
 
 /* Must follow .modal-sheet so shorthand padding does not win */

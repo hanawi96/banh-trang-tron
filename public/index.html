@@ -68,6 +68,9 @@
               Tất cả <em id="count-all">0</em>
             </button>
           </div>
+          <button type="button" class="prepare-open-btn" id="open-prepare">
+            Chuẩn bị
+          </button>
         </div>
         <div id="orders" class="order-list" aria-busy="true">
           <div class="order-skeleton" aria-hidden="true">
@@ -496,6 +499,31 @@
           <button type="button" class="btn primary" id="bulk-deliver">Đã giao</button>
           <button type="button" class="btn danger" id="bulk-delete">Xóa</button>
         </div>
+      </div>
+    </div>
+
+    <div id="prepare-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-prepare></div>
+      <div
+        class="modal-sheet modal-sheet-prepare"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prepare-title"
+      >
+        <header class="prepare-head">
+          <div>
+            <p class="prepare-kicker">Làm bánh</p>
+            <h2 id="prepare-title">Chuẩn bị</h2>
+          </div>
+          <button type="button" class="icon-btn" data-close-prepare aria-label="Đóng">
+            Đóng
+          </button>
+        </header>
+        <div class="prepare-stats" id="prepare-stats"></div>
+        <ul class="prepare-list" id="prepare-list"></ul>
+        <button type="button" class="btn primary full" data-close-prepare>
+          Đã xem
+        </button>
       </div>
     </div>
 

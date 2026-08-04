@@ -10,6 +10,7 @@ const deleteModal = $("delete-modal");
 const deleteOrderModal = $("delete-order-modal");
 const printConfirmModal = $("print-confirm-modal");
 const deliverConfirmModal = $("deliver-confirm-modal");
+const prepareModal = $("prepare-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -498,7 +499,8 @@ function anyModalOpen() {
     !deleteModal.classList.contains("hidden") ||
     !deleteOrderModal.classList.contains("hidden") ||
     !printConfirmModal?.classList.contains("hidden") ||
-    !deliverConfirmModal?.classList.contains("hidden")
+    !deliverConfirmModal?.classList.contains("hidden") ||
+    !prepareModal?.classList.contains("hidden")
   );
 }
 
@@ -947,6 +949,76 @@ function summarizeOrderServings(orders) {
     (p) => `${p.qty} suất ${p.name} size ${sizeLabel(p.size).toLowerCase()}`,
   );
   return { total, rows, parts, bars };
+}
+
+/** Popup chuẩn bị làm bánh — giống tờ tổng kết in, xem nhanh không cần in */
+function openPrepareSummary(ids) {
+  const idList = [...new Set((ids || []).filter(Boolean))];
+  const list = [];
+  for (const id of idList) {
+    const order = findOrder(id);
+    if (order) list.push(order);
+  }
+  if (!list.length) {
+    toast("Không có đơn chưa giao để chuẩn bị");
+    return;
+  }
+
+  const { total, rows, bars } = summarizeOrderServings(list);
+  const barsText = formatBars(bars);
+  const title = $("prepare-title");
+  const stats = $("prepare-stats");
+  const listEl = $("prepare-list");
+
+  if (title) title.textContent = "Tổng kết làm bánh";
+  if (stats) {
+    stats.innerHTML = `
+      <div class="prepare-stat">
+        <span class="prepare-stat-label">Tổng</span>
+        <strong class="prepare-stat-num">${total}</strong>
+        <span class="prepare-stat-unit">suất</span>
+      </div>
+      <div class="prepare-stat prepare-stat-bars">
+        <span class="prepare-stat-label">Cần</span>
+        <strong class="prepare-stat-num">${escapeHtml(barsText)}</strong>
+        <span class="prepare-stat-unit">thanh</span>
+      </div>`;
+  }
+  if (listEl) {
+    listEl.innerHTML = rows.length
+      ? rows
+          .map(
+            (r) => `<li>
+        <span class="prepare-qty">${r.qty}</span>
+        <span class="prepare-name">${escapeHtml(r.name)}</span>
+        <span class="prepare-size">Size ${escapeHtml(sizeLabel(r.size))}</span>
+      </li>`,
+          )
+          .join("")
+      : `<li class="prepare-empty">Chưa có suất</li>`;
+  }
+
+  document.body.classList.add("confirm-open");
+  prepareModal?.classList.remove("hidden");
+  prepareModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() =>
+    prepareModal?.querySelector("[data-close-prepare]")?.focus(),
+  );
+}
+
+function openPrepareForPendingOrders() {
+  const ids = ordersCache
+    .filter((o) => o && isOpenStatus(o.status))
+    .map((o) => o.id);
+  openPrepareSummary(ids);
+}
+
+function closePrepareSummary() {
+  prepareModal?.classList.add("hidden");
+  prepareModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
 }
 
 /** Tổng suất từ các đơn đang checkbox */
@@ -2471,6 +2543,10 @@ $("bulk-select-all")?.addEventListener("click", () => {
   paintOrdersBoard();
 });
 
+$("open-prepare")?.addEventListener("click", () => {
+  openPrepareForPendingOrders();
+});
+
 $("bulk-clear")?.addEventListener("click", () => {
   selectedOrderIds.clear();
   paintOrdersBoard();
@@ -2561,6 +2637,14 @@ printConfirmModal?.addEventListener("click", (e) => {
     t.closest("[data-close-print-confirm]")
   ) {
     closePrintConfirm();
+  }
+});
+
+prepareModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (t.hasAttribute("data-close-prepare") || t.closest("[data-close-prepare]")) {
+    closePrepareSummary();
   }
 });
 
@@ -2683,7 +2767,8 @@ deleteModal.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
+  if (!prepareModal?.classList.contains("hidden")) closePrepareSummary();
+  else if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
   else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();
   else if (!deleteOrderModal?.classList.contains("hidden")) closeDeleteOrderModal();
   else if (!deleteModal.classList.contains("hidden")) closeDeleteModal();
