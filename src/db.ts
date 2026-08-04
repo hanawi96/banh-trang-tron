@@ -305,8 +305,6 @@ export async function applyOrdersStatus(
 export const VN_TZ = "Asia/Ho_Chi_Minh";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type DateRangeKey = "today" | "yesterday" | "7d" | "30d" | "upcoming";
-
 /** Calendar day start (00:00) in Vietnam as unix ms. Instant itself is timezone-agnostic. */
 export function dayStartVn(now = Date.now()): number {
   const day = new Intl.DateTimeFormat("en-CA", {
@@ -318,6 +316,8 @@ export function dayStartVn(now = Date.now()): number {
   // Fixed UTC+7, no DST
   return Date.parse(`${day}T00:00:00+07:00`);
 }
+
+export type DateRangeKey = "today" | "yesterday" | "7d" | "30d" | "upcoming" | "done";
 
 /** Start/end of "today" in Asia/Ho_Chi_Minh as unix ms [start, end) */
 export function todayRangeVn(now = Date.now()): { start: number; end: number } {
@@ -351,7 +351,8 @@ export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey 
     raw === "7d" ||
     raw === "30d" ||
     raw === "today" ||
-    raw === "upcoming"
+    raw === "upcoming" ||
+    raw === "done"
   ) {
     return raw;
   }
@@ -359,7 +360,7 @@ export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey 
 }
 
 /** Home board: yesterday → last selectable delivery day.
- * Include yesterday so "Đã giao" / late undelivered still visible next morning.
+ * Include yesterday so late undelivered still visible next morning.
  */
 export function upcomingDeliveryYmdRange(now = Date.now()): {
   startYmd: string;

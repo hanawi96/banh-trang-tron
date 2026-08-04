@@ -202,6 +202,7 @@ app.get("/api/orders", async (c) => {
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
   // `upcoming` = home board by delivery day (yesterday → last picker day).
+  // `done` = mọi đơn đã giao (mới giao trước).
   // Stats ranges (today/yesterday/7d/30d) = by created_at (orders taken that day).
   const limit =
     rangeKey === "today" ||
@@ -211,7 +212,16 @@ app.get("/api/orders", async (c) => {
       : 2000;
 
   let result;
-  if (rangeKey === "upcoming") {
+  if (rangeKey === "done") {
+    result = await db.execute({
+      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+            FROM orders
+            WHERE status = 'done'
+            ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
+            LIMIT ?`,
+      args: [limit],
+    });
+  } else if (rangeKey === "upcoming") {
     const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
     const { start: createdStart, end: createdEnd } = todayRangeVn();
     result = await db.execute({

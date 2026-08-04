@@ -36,6 +36,9 @@ let cart = [];
 let products = [];
 /** @type {Array<any>} */
 let ordersCache = [];
+/** Mọi đơn đã giao (lịch sử) — tab Đã giao */
+let doneOrdersCache = [];
+let doneOrdersLoadPromise = null;
 /** @type {Array<any>} */
 let statsOrders = [];
 /** @type {'today'|'yesterday'|'7d'|'30d'} */
@@ -235,6 +238,7 @@ function refreshOrdersIfDayChanged() {
   if (!ordersFetchedDay || ordersFetchedDay === vnDayKey()) return;
   ordersFetchedDay = "";
   loadOrders().catch(() => {});
+  loadDoneOrders().catch(() => {});
 }
 
 function showOrdersSkeleton() {
@@ -1327,8 +1331,14 @@ async function printOrdersAndMarkDone(ids) {
 
 function updateOrderFilterCounts() {
   const open = ordersCache.filter((o) => isOpenStatus(o.status)).length;
-  const done = ordersCache.filter((o) => normalizeStatus(o.status) === "done").length;
-  const all = ordersCache.length;
+  const done = doneOrdersCache.length;
+  const openIds = new Set(
+    ordersCache.filter((o) => isOpenStatus(o.status)).map((o) => o.id),
+  );
+  let all = open;
+  for (const o of doneOrdersCache) {
+    if (!openIds.has(o.id)) all += 1;
+  }
   const countPending = $("count-pending");
   const countDone = $("count-done");
   const countAll = $("count-all");
@@ -1376,27 +1386,100 @@ function sortOrders(list) {
   });
 }
 
+/** Mới giao trước (delivered_at → printed_at → created_at) */
+function sortDoneOrders(list) {
+  return [...list].sort((a, b) => {
+    const ta =
+      Number(a.delivered_at) ||
+      Number(a.printed_at) ||
+      Number(a.created_at) ||
+      0;
+    const tb =
+      Number(b.delivered_at) ||
+      Number(b.printed_at) ||
+      Number(b.created_at) ||
+      0;
+    return tb - ta;
+  });
+}
+
+function findOrder(id) {
+  return (
+    ordersCache.find((o) => o.id === id) ||
+    doneOrdersCache.find((o) => o.id === id) ||
+    null
+  );
+}
+
+/** Đồng bộ một đơn vào doneOrdersCache theo status hiện tại */
+function syncDoneOrdersCache(order) {
+  if (!order?.id) return;
+  if (normalizeStatus(order.status) === "done") {
+    doneOrdersCache = sortDoneOrders([
+      order,
+      ...doneOrdersCache.filter((o) => o.id !== order.id),
+    ]);
+  } else {
+    doneOrdersCache = doneOrdersCache.filter((o) => o.id !== order.id);
+  }
+}
+
+/** Đưa đơn pending trở lại board upcoming nếu chưa có */
+function ensureOrderOnBoard(order) {
+  if (!order?.id) return;
+  const idx = ordersCache.findIndex((o) => o.id === order.id);
+  if (idx >= 0) {
+    ordersCache[idx] = order;
+    ordersCache = sortOrders(ordersCache);
+    return;
+  }
+  if (isOpenStatus(order.status)) {
+    ordersCache = sortOrders([...ordersCache, order]);
+  }
+}
+
+/** Danh sách hiển thị theo tab lọc */
+function boardOrdersForFilter() {
+  if (orderFilter === "done") return doneOrdersCache;
+  if (orderFilter === "pending") {
+    return ordersCache.filter((o) => isOpenStatus(o.status));
+  }
+  const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
+  const openIds = new Set(open.map((o) => o.id));
+  return [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
+}
+
+/** Cập nhật board upcoming (nếu có list) rồi vẽ lại */
 function renderOrders(orders) {
   const day = vnDayKey();
   if (ordersFetchedDay && ordersFetchedDay !== day) {
     ordersFetchedDay = "";
     loadOrders().catch(() => {});
+    loadDoneOrders().catch(() => {});
     return;
   }
-  ordersCache = sortOrders(
-    (orders || []).map((o) => ({
-      ...o,
-      status: normalizeStatus(o.status),
-    })),
-  );
-  if (!ordersFetchedDay) ordersFetchedDay = day;
-  writeOrdersCache(ordersCache);
+  if (orders) {
+    ordersCache = sortOrders(
+      orders.map((o) => ({
+        ...o,
+        status: normalizeStatus(o.status),
+      })),
+    );
+    if (!ordersFetchedDay) ordersFetchedDay = day;
+    writeOrdersCache(ordersCache);
+  }
+  paintOrdersBoard();
+}
+
+function paintOrdersBoard() {
   updateOrderFilterCounts();
   ordersEl?.removeAttribute("aria-busy");
 
-  const visible = ordersCache.filter((o) => matchesOrderFilter(o.status));
+  const visible = boardOrdersForFilter();
+  const hasAny =
+    ordersCache.some((o) => isOpenStatus(o.status)) || doneOrdersCache.length > 0;
 
-  if (!ordersCache.length) {
+  if (!hasAny) {
     ordersEl.innerHTML = `<p class="empty">Chưa có đơn cần giao.</p>`;
     return;
   }
@@ -1545,7 +1628,7 @@ function renderOrders(orders) {
 
 async function setOrderStatus(id, status, opts = {}) {
   if (statusBusy.has(id)) return;
-  const prev = ordersCache.find((o) => o.id === id);
+  const prev = findOrder(id);
   if (!prev) return;
   const old = normalizeStatus(prev.status);
   const next = normalizeStatus(status);
@@ -1560,7 +1643,14 @@ async function setOrderStatus(id, status, opts = {}) {
   statusBusy.add(id);
   applyLocalTimeline(prev, next, { setPrinted });
   if (next === "done") selectedOrderIds.delete(id);
-  renderOrders(ordersCache);
+  syncDoneOrdersCache(prev);
+  ensureOrderOnBoard(prev);
+  if (next === "done") {
+    // Board upcoming vẫn có thể giữ bản ghi done trong cửa sổ ngày — ok
+    const idx = ordersCache.findIndex((o) => o.id === id);
+    if (idx >= 0) ordersCache[idx] = prev;
+  }
+  paintOrdersBoard();
 
   try {
     const data = await api(`/api/orders/${encodeURIComponent(id)}/status`, {
@@ -1569,12 +1659,16 @@ async function setOrderStatus(id, status, opts = {}) {
     });
     if (data && "printed_at" in data) prev.printed_at = data.printed_at;
     if (data && "delivered_at" in data) prev.delivered_at = data.delivered_at;
-    renderOrders(ordersCache);
+    syncDoneOrdersCache(prev);
+    ensureOrderOnBoard(prev);
+    paintOrdersBoard();
   } catch (err) {
     prev.status = snap.status;
     prev.printed_at = snap.printed_at;
     prev.delivered_at = snap.delivered_at;
-    renderOrders(ordersCache);
+    syncDoneOrdersCache(prev);
+    ensureOrderOnBoard(prev);
+    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   } finally {
     statusBusy.delete(id);
@@ -1605,6 +1699,7 @@ function closeDeleteOrderModal() {
 function removeOrdersFromCaches(ids) {
   const drop = new Set(ids);
   ordersCache = ordersCache.filter((o) => !drop.has(o.id));
+  doneOrdersCache = doneOrdersCache.filter((o) => !drop.has(o.id));
   statsOrders = statsOrders.filter((o) => !drop.has(o.id));
   for (const id of drop) selectedOrderIds.delete(id);
 }
@@ -1613,9 +1708,10 @@ async function deleteOrders(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return;
   const snapshot = ordersCache.slice();
+  const doneSnapshot = doneOrdersCache.slice();
   const statsSnapshot = statsOrders.slice();
   removeOrdersFromCaches(unique);
-  renderOrders(ordersCache);
+  paintOrdersBoard();
   if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
 
   try {
@@ -1631,8 +1727,9 @@ async function deleteOrders(ids) {
     loadProducts().catch(() => {});
   } catch (err) {
     ordersCache = snapshot;
+    doneOrdersCache = doneSnapshot;
     statsOrders = statsSnapshot;
-    renderOrders(ordersCache);
+    paintOrdersBoard();
     if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
     toast(err.message || "Không xóa được");
   }
@@ -1647,7 +1744,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
   const next = normalizeStatus(status);
   const setPrinted = Boolean(opts.setPrinted) && next === "done";
   const targets = ids
-    .map((id) => ordersCache.find((o) => o.id === id))
+    .map((id) => findOrder(id))
     .filter((o) => o && normalizeStatus(o.status) !== next);
   if (!targets.length) return;
 
@@ -1660,8 +1757,12 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
   for (const o of targets) {
     applyLocalTimeline(o, next, { setPrinted });
     if (next === "done") selectedOrderIds.delete(o.id);
+    syncDoneOrdersCache(o);
+    ensureOrderOnBoard(o);
+    const idx = ordersCache.findIndex((x) => x.id === o.id);
+    if (idx >= 0) ordersCache[idx] = o;
   }
-  renderOrders(ordersCache);
+  paintOrdersBoard();
 
   try {
     const data = await api("/api/orders/status-bulk", {
@@ -1683,8 +1784,9 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
           o.printed_at = data.at;
         }
         if (next === "done") o.delivered_at = data.at;
+        syncDoneOrdersCache(o);
       }
-      renderOrders(ordersCache);
+      paintOrdersBoard();
     }
     if (!opts.silent) {
       if (next === "done") toast(`Đã giao ${targets.length} đơn`);
@@ -1693,13 +1795,15 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     }
   } catch (err) {
     for (const s of snapshot) {
-      const o = ordersCache.find((x) => x.id === s.id);
+      const o = findOrder(s.id);
       if (!o) continue;
       o.status = s.status;
       o.printed_at = s.printed_at;
       o.delivered_at = s.delivered_at;
+      syncDoneOrdersCache(o);
+      ensureOrderOnBoard(o);
     }
-    renderOrders(ordersCache);
+    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   }
 }
@@ -2164,6 +2268,24 @@ async function loadOrders() {
   return ordersLoadPromise;
 }
 
+/** Mọi đơn đã giao — tab Đã giao (mới giao lên đầu) */
+async function loadDoneOrders() {
+  if (doneOrdersLoadPromise) return doneOrdersLoadPromise;
+  doneOrdersLoadPromise = (async () => {
+    const data = await api("/api/orders?range=done");
+    doneOrdersCache = sortDoneOrders(
+      (data.orders || []).map((o) => ({
+        ...o,
+        status: normalizeStatus(o.status),
+      })),
+    );
+    paintOrdersBoard();
+  })().finally(() => {
+    doneOrdersLoadPromise = null;
+  });
+  return doneOrdersLoadPromise;
+}
+
 function syncStatsRangeButtons() {
   document.querySelectorAll("[data-stats-range]").forEach((btn) => {
     btn.classList.toggle(
@@ -2223,9 +2345,9 @@ async function enterApp() {
 
   try {
     // Orders first for home; products in parallel (cached menu already painted)
-    await Promise.all([loadOrders(), loadProducts()]);
+    await Promise.all([loadOrders(), loadDoneOrders(), loadProducts()]);
   } catch {
-    if (!ordersCache.length) {
+    if (!ordersCache.length && !doneOrdersCache.length) {
       ordersEl.innerHTML = `<p class="empty">Không tải được đơn.</p>`;
     }
   }
@@ -2244,9 +2366,9 @@ async function refreshData() {
     if (tab === "stats") {
       await Promise.all([loadProducts(), loadStats()]);
     } else if (tab === "orders") {
-      await Promise.all([loadOrders(), loadProducts()]);
+      await Promise.all([loadOrders(), loadDoneOrders(), loadProducts()]);
     } else {
-      await Promise.all([loadProducts(), loadOrders()]);
+      await Promise.all([loadProducts(), loadOrders(), loadDoneOrders()]);
     }
     toast("Đã cập nhật");
   } catch (err) {
@@ -2286,7 +2408,7 @@ document.querySelector("#tab-orders .order-filters")?.addEventListener("click", 
   if (next !== "pending" && next !== "done" && next !== "all") return;
   orderFilter = next;
   if (next === "done") selectedOrderIds.clear();
-  renderOrders(ordersCache);
+  paintOrdersBoard();
 });
 
 $("bulk-select-all")?.addEventListener("click", () => {
@@ -2298,12 +2420,12 @@ $("bulk-select-all")?.addEventListener("click", () => {
   } else {
     for (const id of openIds) selectedOrderIds.add(id);
   }
-  renderOrders(ordersCache);
+  paintOrdersBoard();
 });
 
 $("bulk-clear")?.addEventListener("click", () => {
   selectedOrderIds.clear();
-  renderOrders(ordersCache);
+  paintOrdersBoard();
 });
 
 $("bulk-export-pdf")?.addEventListener("click", () => {
@@ -2375,7 +2497,7 @@ ordersEl.addEventListener("click", (e) => {
   const statusBtn = t.closest("[data-toggle-status]");
   if (statusBtn) {
     const id = statusBtn.getAttribute("data-toggle-status");
-    const order = ordersCache.find((o) => o.id === id);
+    const order = findOrder(id);
     if (!order || !id) return;
     const cur = normalizeStatus(order.status);
     if (cur === "pending") {
@@ -2392,7 +2514,7 @@ ordersEl.addEventListener("click", (e) => {
   const editBtn = t.closest("[data-edit-order]");
   if (editBtn) {
     const id = editBtn.getAttribute("data-edit-order");
-    const order = ordersCache.find((o) => o.id === id);
+    const order = findOrder(id);
     if (order) openEditOrderModal(order);
     return;
   }
