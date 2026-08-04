@@ -1050,7 +1050,7 @@ function updateBulkBar() {
   document.body.classList.toggle("bulk-open", show);
   countEl.textContent = String(n);
   selectAllBtn.textContent =
-    n > 0 && n === openIds.length ? "Bỏ chọn" : "Chọn tất cả";
+    n > 0 && n === openIds.length ? "Bỏ chọn" : "Chọn hết";
 
   if (servingsEl) {
     if (!show) {
