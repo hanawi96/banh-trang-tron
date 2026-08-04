@@ -251,14 +251,15 @@ export function parseTs(raw: unknown): number | null {
 
 /**
  * Cập nhật status + mốc giờ VN (lưu unix ms, format bằng Asia/Ho_Chi_Minh).
- * - printed: giữ printed_at lần đầu, xóa delivered_at (hoàn tác giao)
- * - done: set delivered_at; giữ printed_at hiện có (không invent nếu giao nhanh)
+ * - printed: giữ printed_at lần đầu, xóa delivered_at
+ * - done: set delivered_at; setPrinted=true thì bổ sung printed_at (luồng in=giao)
  * - pending: xóa cả hai mốc
  */
 export async function applyOrdersStatus(
   db: Client,
   ids: string[],
   status: OrderStatus,
+  opts: { setPrinted?: boolean } = {},
 ): Promise<{ at: number }> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return { at: nowMs() };
@@ -280,6 +281,15 @@ export async function applyOrdersStatus(
                 delivered_at = NULL
             WHERE id IN (${placeholders})`,
       args: [status, at, ...unique],
+    });
+  } else if (opts.setPrinted) {
+    await db.execute({
+      sql: `UPDATE orders
+            SET status = ?,
+                printed_at = COALESCE(printed_at, ?),
+                delivered_at = ?
+            WHERE id IN (${placeholders})`,
+      args: [status, at, at, ...unique],
     });
   } else {
     await db.execute({
@@ -348,14 +358,17 @@ export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey 
   return "today";
 }
 
-/** Home board: today → last selectable delivery day (same window as date picker). */
+/** Home board: yesterday → last selectable delivery day.
+ * Include yesterday so "Đã giao" / late undelivered still visible next morning.
+ */
 export function upcomingDeliveryYmdRange(now = Date.now()): {
   startYmd: string;
   endYmdExclusive: string;
 } {
   const opts = deliveryDateOptions(now);
-  const startYmd = vnYmd(now);
-  const last = opts[opts.length - 1]?.ymd || startYmd;
+  const today = vnYmd(now);
+  const startYmd = addDaysYmd(today, -1);
+  const last = opts[opts.length - 1]?.ymd || today;
   return { startYmd, endYmdExclusive: addDaysYmd(last, 1) };
 }
 

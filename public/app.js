@@ -104,8 +104,10 @@ function formatVnDateTime(ts) {
   return dateTimeFmt.format(n);
 }
 
-/** Cập nhật mốc giờ local theo quy tắc server (unix ms → format VN) */
-function applyLocalTimeline(order, nextStatus) {
+/** Cập nhật mốc giờ local theo quy tắc server (unix ms → format VN)
+ * @param {{ setPrinted?: boolean }} [opts]
+ */
+function applyLocalTimeline(order, nextStatus, opts = {}) {
   const next = normalizeStatus(nextStatus);
   const at = Date.now();
   order.status = next;
@@ -116,8 +118,11 @@ function applyLocalTimeline(order, nextStatus) {
     order.printed_at = Number(order.printed_at) > 0 ? order.printed_at : at;
     order.delivered_at = null;
   } else {
-    // done: giữ printed_at nếu có — giao nhanh không invent giờ in
     order.delivered_at = at;
+    // In = giao: ghi cả giờ in; giao tay nhanh: không invent giờ in
+    if (opts.setPrinted && !(Number(order.printed_at) > 0)) {
+      order.printed_at = at;
+    }
   }
 }
 
@@ -1277,8 +1282,8 @@ function openPrintConfirm(ids) {
   if (text) {
     text.textContent =
       n > 1
-        ? `Xác nhận in ${n} đơn: 1 tờ tổng kết suất + ${orderSheets} tờ phiếu (2 đơn/tờ). Đơn chưa in sẽ chuyển sang Đã in.`
-        : "Xác nhận in 1 tờ tổng kết + phiếu đơn. Đơn sẽ chuyển sang Đã in.";
+        ? `In ${n} đơn (1 tờ tổng kết + ${orderSheets} tờ phiếu). In xong đơn sẽ chuyển sang Đã giao.`
+        : "In phiếu đơn. In xong đơn sẽ chuyển sang Đã giao.";
   }
   printConfirmModal?.classList.remove("hidden");
   printConfirmModal?.setAttribute("aria-hidden", "false");
@@ -1295,8 +1300,8 @@ function closePrintConfirm() {
 
 let printBusy = false;
 
-/** In phiếu rồi chuyển các đơn đang pending → printed (đánh dấu sau khi đã gọi print) */
-async function printOrdersAndMarkPrinted(ids) {
+/** In phiếu rồi chuyển đơn chưa giao → đã giao (in = giao) */
+async function printOrdersAndMarkDone(ids) {
   if (printBusy) return;
   printBusy = true;
   try {
@@ -1304,12 +1309,17 @@ async function printOrdersAndMarkPrinted(ids) {
     if (!printedIds?.length) return;
     const toMark = printedIds.filter((id) => {
       const o = ordersCache.find((x) => x.id === id);
-      return o && normalizeStatus(o.status) === "pending";
+      return o && isOpenStatus(o.status);
     });
     if (!toMark.length) return;
     // Trì hoãn cập nhật status/render — tránh đụng lúc iframe đang in
     await new Promise((r) => setTimeout(r, 400));
-    await setOrdersStatusBulk(toMark, "printed", { silent: true });
+    await setOrdersStatusBulk(toMark, "done", { silent: true, setPrinted: true });
+    toast(
+      toMark.length > 1
+        ? `Đã in · ${toMark.length} đơn sang Đã giao`
+        : "Đã in · đơn sang Đã giao",
+    );
   } finally {
     printBusy = false;
   }
@@ -1358,7 +1368,7 @@ function sortOrders(list) {
     // Trưa trước, chiều sau
     const slotDiff = slotRank(a.delivery_slot) - slotRank(b.delivery_slot);
     if (slotDiff !== 0) return slotDiff;
-    // Chưa in → đã in → đã giao
+    // Chưa giao (pending/printed) trước, đã giao sau
     const st = statusRank(a.status) - statusRank(b.status);
     if (st !== 0) return st;
     // Trong cùng trạng thái: đơn sớm nhất lên trên
@@ -1441,9 +1451,7 @@ function renderOrders(orders) {
     const checked = selectedOrderIds.has(o.id) ? "checked" : "";
     const actionBtn =
       status === "done"
-        ? Number(o.printed_at) > 0
-          ? "Hoàn tác · Đã in"
-          : "Hoàn tác"
+        ? "Hoàn tác · Chưa giao"
         : status === "printed"
           ? `${CHECK_ICON}<span>Đánh dấu đã giao</span>`
           : `${PRINT_ICON}<span>In đơn</span>`;
@@ -1455,8 +1463,15 @@ function renderOrders(orders) {
         : "";
     const printedAtText = formatVnDateTime(o.printed_at);
     const deliveredAtText = formatVnDateTime(o.delivered_at);
-    const timelineHtml =
-      printedAtText || deliveredAtText
+    const sameStamp =
+      printedAtText &&
+      deliveredAtText &&
+      Number(o.printed_at) > 0 &&
+      Number(o.delivered_at) > 0 &&
+      Math.abs(Number(o.printed_at) - Number(o.delivered_at)) < 2000;
+    const timelineHtml = sameStamp
+      ? `<div class="order-timeline"><span class="order-timeline-item"><em>In/Giao</em> ${escapeHtml(printedAtText)}</span></div>`
+      : printedAtText || deliveredAtText
         ? `<div class="order-timeline">${
             printedAtText
               ? `<span class="order-timeline-item"><em>In</em> ${escapeHtml(printedAtText)}</span>`
@@ -1520,11 +1535,6 @@ function renderOrders(orders) {
             ${DELETE_ICON}
           </button>
         </div>
-        ${
-          status === "printed"
-            ? `<button type="button" class="order-undo-print" data-undo-print="${escapeHtml(o.id)}">Hoàn tác · Chưa in</button>`
-            : ""
-        }
       </div>
     `;
     frag.appendChild(el);
@@ -1533,13 +1543,14 @@ function renderOrders(orders) {
   updateBulkBar();
 }
 
-async function setOrderStatus(id, status) {
+async function setOrderStatus(id, status, opts = {}) {
   if (statusBusy.has(id)) return;
   const prev = ordersCache.find((o) => o.id === id);
   if (!prev) return;
   const old = normalizeStatus(prev.status);
   const next = normalizeStatus(status);
   if (old === next) return;
+  const setPrinted = Boolean(opts.setPrinted) && next === "done";
 
   const snap = {
     status: prev.status,
@@ -1547,14 +1558,14 @@ async function setOrderStatus(id, status) {
     delivered_at: prev.delivered_at ?? null,
   };
   statusBusy.add(id);
-  applyLocalTimeline(prev, next);
+  applyLocalTimeline(prev, next, { setPrinted });
   if (next === "done") selectedOrderIds.delete(id);
   renderOrders(ordersCache);
 
   try {
     const data = await api(`/api/orders/${encodeURIComponent(id)}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status: next }),
+      body: JSON.stringify({ status: next, setPrinted }),
     });
     if (data && "printed_at" in data) prev.printed_at = data.printed_at;
     if (data && "delivered_at" in data) prev.delivered_at = data.delivered_at;
@@ -1630,10 +1641,11 @@ async function deleteOrders(ids) {
 /**
  * @param {string[]} ids
  * @param {string} status
- * @param {{ silent?: boolean }} [opts]
+ * @param {{ silent?: boolean, setPrinted?: boolean }} [opts]
  */
 async function setOrdersStatusBulk(ids, status, opts = {}) {
   const next = normalizeStatus(status);
+  const setPrinted = Boolean(opts.setPrinted) && next === "done";
   const targets = ids
     .map((id) => ordersCache.find((o) => o.id === id))
     .filter((o) => o && normalizeStatus(o.status) !== next);
@@ -1646,7 +1658,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     delivered_at: o.delivered_at ?? null,
   }));
   for (const o of targets) {
-    applyLocalTimeline(o, next);
+    applyLocalTimeline(o, next, { setPrinted });
     if (next === "done") selectedOrderIds.delete(o.id);
   }
   renderOrders(ordersCache);
@@ -1657,12 +1669,17 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       body: JSON.stringify({
         ids: targets.map((o) => o.id),
         status: next,
+        setPrinted,
       }),
     });
     // Đồng bộ mốc giờ từ server (cùng unix ms) nếu client lệch giây
     if (data?.at && (next === "printed" || next === "done")) {
       for (const o of targets) {
-        if (next === "printed" && !(Number(snapshot.find((s) => s.id === o.id)?.printed_at) > 0)) {
+        const snap = snapshot.find((s) => s.id === o.id);
+        if (
+          (next === "printed" || setPrinted) &&
+          !(Number(snap?.printed_at) > 0)
+        ) {
           o.printed_at = data.at;
         }
         if (next === "done") o.delivered_at = data.at;
@@ -2289,20 +2306,6 @@ $("bulk-clear")?.addEventListener("click", () => {
   renderOrders(ordersCache);
 });
 
-$("bulk-deliver")?.addEventListener("click", () => {
-  const ids = [...selectedOrderIds];
-  if (!ids.length) return;
-  const printable = ids.filter((id) => {
-    const o = ordersCache.find((x) => x.id === id);
-    return o && normalizeStatus(o.status) === "printed";
-  });
-  if (!printable.length) {
-    toast("Chỉ đơn đã in mới đánh dấu giao — hãy in trước");
-    return;
-  }
-  setOrdersStatusBulk(printable, "done");
-});
-
 $("bulk-export-pdf")?.addEventListener("click", () => {
   const ids = [...selectedOrderIds];
   if (!ids.length) {
@@ -2315,7 +2318,7 @@ $("bulk-export-pdf")?.addEventListener("click", () => {
 $("confirm-print-order")?.addEventListener("click", async () => {
   const ids = pendingPrintIds.slice();
   closePrintConfirm();
-  if (ids.length) await printOrdersAndMarkPrinted(ids);
+  if (ids.length) await printOrdersAndMarkDone(ids);
 });
 
 printConfirmModal?.addEventListener("click", (e) => {
@@ -2363,12 +2366,6 @@ ordersEl.addEventListener("click", (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
   if (t.closest("[data-select-order]") || t.closest(".order-check")) return;
-  const undoPrintBtn = t.closest("[data-undo-print]");
-  if (undoPrintBtn) {
-    const id = undoPrintBtn.getAttribute("data-undo-print");
-    if (id) setOrderStatus(id, "pending");
-    return;
-  }
   const quickDeliverBtn = t.closest("[data-quick-deliver]");
   if (quickDeliverBtn) {
     const id = quickDeliverBtn.getAttribute("data-quick-deliver");
@@ -2384,10 +2381,11 @@ ordersEl.addEventListener("click", (e) => {
     if (cur === "pending") {
       openPrintConfirm([id]);
     } else if (cur === "printed") {
+      // Đơn cũ còn trạng thái đã in → đánh dấu giao nốt
       setOrderStatus(id, "done");
     } else {
-      // Hoàn tác giao: về đã in nếu từng in, không thì về chưa in
-      setOrderStatus(id, Number(order.printed_at) > 0 ? "printed" : "pending");
+      // Hoàn tác giao → chưa giao
+      setOrderStatus(id, "pending");
     }
     return;
   }

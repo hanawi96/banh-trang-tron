@@ -933,7 +933,7 @@ body.bulk-open .tabbar {
 
 .order-bulk-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 
@@ -1079,21 +1079,6 @@ body.bulk-open .tabbar {
 
 .order-actions-pending {
   grid-template-columns: 1fr 1fr 42px 42px;
-}
-
-.order-undo-print {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 4px 2px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.order-undo-print:active {
-  color: var(--accent-2);
 }
 
 .order-status-btn {

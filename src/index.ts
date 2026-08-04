@@ -201,7 +201,7 @@ app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
-  // `upcoming` = home board by delivery day (today → last picker day).
+  // `upcoming` = home board by delivery day (yesterday → last picker day).
   // Stats ranges (today/yesterday/7d/30d) = by created_at (orders taken that day).
   const limit =
     rangeKey === "today" ||
@@ -501,7 +501,9 @@ app.put("/api/orders/:id", async (c) => {
 
 app.patch("/api/orders/:id/status", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json<{ status?: string }>().catch(() => null);
+  const body = await c.req
+    .json<{ status?: string; setPrinted?: boolean }>()
+    .catch(() => null);
   const raw = body?.status;
   const status =
     raw === "done" || raw === "printed" || raw === "pending"
@@ -510,6 +512,7 @@ app.patch("/api/orders/:id/status", async (c) => {
   if (!status) {
     return c.json({ error: "Trạng thái không hợp lệ" }, 400);
   }
+  const setPrinted = Boolean(body?.setPrinted) && status === "done";
 
   const db = getDb(c.env);
   await ensureSchema(db);
@@ -520,12 +523,12 @@ app.patch("/api/orders/:id/status", async (c) => {
   if (!existing.rows.length) {
     return c.json({ error: "Không tìm thấy đơn" }, 404);
   }
-  const { at } = await applyOrdersStatus(db, [id], status);
+  const { at } = await applyOrdersStatus(db, [id], status, { setPrinted });
   const prevPrinted = parseTs(existing.rows[0]?.printed_at);
   const printed_at =
     status === "pending"
       ? null
-      : status === "printed"
+      : status === "printed" || setPrinted
         ? prevPrinted || at
         : prevPrinted;
   const delivered_at = status === "done" ? at : null;
@@ -535,7 +538,7 @@ app.patch("/api/orders/:id/status", async (c) => {
 
 app.post("/api/orders/status-bulk", async (c) => {
   const body = await c.req
-    .json<{ ids?: string[]; status?: string }>()
+    .json<{ ids?: string[]; status?: string; setPrinted?: boolean }>()
     .catch(() => null);
   const raw = body?.status;
   const status =
@@ -548,12 +551,13 @@ app.post("/api/orders/status-bulk", async (c) => {
   if (!status || !ids.length) {
     return c.json({ error: "Dữ liệu không hợp lệ" }, 400);
   }
+  const setPrinted = Boolean(body?.setPrinted) && status === "done";
 
   const db = getDb(c.env);
   await ensureSchema(db);
-  const { at } = await applyOrdersStatus(db, ids, status);
+  const { at } = await applyOrdersStatus(db, ids, status, { setPrinted });
 
-  return c.json({ ok: true, status, ids, at });
+  return c.json({ ok: true, status, ids, at, setPrinted });
 });
 
 app.delete("/api/orders/:id", async (c) => {
