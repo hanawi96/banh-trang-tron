@@ -9,6 +9,7 @@ const editModal = $("edit-modal");
 const deleteModal = $("delete-modal");
 const deleteOrderModal = $("delete-order-modal");
 const printConfirmModal = $("print-confirm-modal");
+const deliverConfirmModal = $("deliver-confirm-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -62,6 +63,8 @@ let editOrderItems = [];
 let pendingDeleteOrderIds = [];
 /** @type {string[]} */
 let pendingPrintIds = [];
+/** @type {string[]} */
+let pendingDeliverIds = [];
 /** @type {File|null} */
 let pendingImageFile = null;
 let previewObjectUrl = "";
@@ -494,7 +497,8 @@ function anyModalOpen() {
     !editModal.classList.contains("hidden") ||
     !deleteModal.classList.contains("hidden") ||
     !deleteOrderModal.classList.contains("hidden") ||
-    !printConfirmModal?.classList.contains("hidden")
+    !printConfirmModal?.classList.contains("hidden") ||
+    !deliverConfirmModal?.classList.contains("hidden")
   );
 }
 
@@ -1001,9 +1005,6 @@ function buildOrderSlipHtml(order, index, total, half) {
   const when = [deliveryDateLabel(order.delivery_date || ""), slotLabel(slot)]
     .filter(Boolean)
     .join(" · ");
-  const code = String(order.id || "").slice(0, 8).toUpperCase();
-  const printAt = Number(order.printed_at) > 0 ? Number(order.printed_at) : Date.now();
-  const printedLabel = formatVnDateTime(printAt);
   const items = Array.isArray(order.items) ? order.items : [];
   const itemsHtml = items.length
     ? items
@@ -1018,22 +1019,17 @@ function buildOrderSlipHtml(order, index, total, half) {
         })
         .join("")
     : `<li class="empty-line">Chưa có món</li>`;
-  const dense = items.length >= 5 ? " slip-dense" : "";
+  const dense = items.length >= 4 ? " slip-dense" : "";
   const halfClass = half === "bottom" ? "slip-bottom" : "slip-top";
+  const qrSrc = `${location.origin}/img/qr_code.jpg`;
 
   return `<article class="slip ${halfClass}${dense}">
-  <header class="slip-head">
-    <div class="slip-brand">Bánh tráng cuộn</div>
-    <div class="slip-meta">
-      <span>#${escapeHtml(code)}</span>
-      ${printedLabel ? `<span>In ${escapeHtml(printedLabel)}</span>` : ""}
-      <span>${index + 1}/${total}</span>
+  <div class="slip-who">
+    <div class="slip-when">${when ? escapeHtml(when) : "Chưa chọn giao"}</div>
+    <div class="slip-customer">
+      <div class="slip-name">${escapeHtml(customer)}</div>
+      ${phone ? `<div class="slip-phone">${escapeHtml(phone)}</div>` : ""}
     </div>
-  </header>
-  <div class="slip-when">${when ? escapeHtml(when) : "Chưa chọn giao"}</div>
-  <div class="slip-customer">
-    <div class="slip-name">${escapeHtml(customer)}</div>
-    ${phone ? `<div class="slip-phone">${escapeHtml(phone)}</div>` : ""}
   </div>
   <ul class="slip-items">${itemsHtml}</ul>
   ${note ? `<div class="slip-note"><span>Lưu ý</span>${escapeHtml(note)}</div>` : ""}
@@ -1041,6 +1037,15 @@ function buildOrderSlipHtml(order, index, total, half) {
     <span>Tổng tiền:</span>
     <strong>${escapeHtml(formatVnd(order.total))}</strong>
   </footer>
+  <div class="slip-pay">
+    <img class="slip-qr" src="${escapeHtml(qrSrc)}" alt="QR chuyển khoản" width="180" height="180" />
+    <div class="slip-pay-info">
+      <div class="slip-pay-title">Thanh toán qua CK — vui lòng CK vào</div>
+      <div class="slip-pay-acc">1903 6266 5600 15</div>
+      <div class="slip-pay-bank">Techcombank</div>
+      <div class="slip-pay-name">Lê Thị Ánh</div>
+    </div>
+  </div>
 </article>`;
 }
 
@@ -1082,10 +1087,11 @@ function buildPrintSummaryPageHtml(list) {
 </section>`;
 }
 
-/** Group slips into A6 pages — summary first, then 2 half-slips per sheet */
+/** Group slips into A6 pages — bulk: summary first; single: slips only */
 function buildPrintPagesHtml(list) {
   const total = list.length;
-  const pages = [buildPrintSummaryPageHtml(list)];
+  const pages = [];
+  if (total > 1) pages.push(buildPrintSummaryPageHtml(list));
   for (let i = 0; i < total; i += 2) {
     const top = buildOrderSlipHtml(list[i], i, total, "top");
     const bottom =
@@ -1161,50 +1167,73 @@ padding:1.4mm 2.4mm;border:1.4pt solid #111;border-radius:1.2mm
 .sum-dense .sum-list .sum-name{font-size:10.5pt}
 .sum-dense .sum-list .sum-size{font-size:9pt;padding:1mm 1.6mm}
 .slip{
-position:absolute;left:0;right:0;width:105mm;height:70mm;
-padding:4.5mm 5.5mm 4mm;overflow:hidden;
-display:flex;flex-direction:column;gap:1.8mm;min-height:0
+position:absolute;left:0;right:0;width:105mm;height:73mm;
+padding:2.5mm 4.5mm 2mm;
+display:flex;flex-direction:column;gap:.8mm;min-height:0;overflow:hidden
 }
 .slip-top{top:0}
-.slip-bottom{top:78mm}
+.slip-bottom{top:75mm}
 .slip-blank{visibility:hidden}
 .cut-guide{
 position:absolute;left:0;right:0;top:74mm;z-index:2;
 height:0;border-top:1.6pt solid #111;pointer-events:none
 }
-.slip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:2mm;flex:0 0 auto}
-.slip-brand{font-size:10pt;font-weight:800;letter-spacing:-.02em;line-height:1.15}
-.slip-meta{text-align:right;font-size:7pt;color:#444;line-height:1.3;white-space:nowrap}
-.slip-when{
-font-size:10pt;font-weight:800;text-align:center;flex:0 0 auto;
-padding:1.6mm 2.5mm;border:1.2pt solid #111;border-radius:1.2mm;
-letter-spacing:.01em
+.slip-who{
+display:flex;align-items:center;justify-content:center;gap:2.5mm;
+flex:0 0 auto;min-width:0;margin-bottom:1.2mm
 }
-.slip-customer{text-align:center;padding:0 .5mm;flex:0 0 auto}
-.slip-name{font-size:13pt;font-weight:800;letter-spacing:-.02em;line-height:1.15;word-break:break-word}
-.slip-phone{margin-top:.5mm;font-size:9.5pt;font-weight:700;color:#222}
+.slip-when{
+font-size:8pt;font-weight:800;flex:0 0 auto;white-space:nowrap;
+padding:.8mm 1.8mm;border:1pt solid #111;border-radius:1.1mm;
+letter-spacing:.01em;line-height:1.15
+}
+.slip-customer{text-align:left;padding:0;min-width:0;flex:0 1 auto}
+.slip-name{font-size:11pt;font-weight:800;letter-spacing:-.02em;line-height:1.1;word-break:break-word}
+.slip-phone{margin-top:.2mm;font-size:7.5pt;font-weight:700;color:#222}
 .slip-items{
-flex:1 1 auto;list-style:none;border-top:0.8pt dashed #999;border-bottom:0.8pt dashed #999;
-padding:1.6mm 0;display:flex;flex-direction:column;justify-content:center;gap:1.4mm;
+flex:1 1 auto;list-style:none;border-top:0.7pt dashed #999;border-bottom:0.7pt dashed #999;
+padding:1.5mm 0;display:flex;flex-direction:column;justify-content:center;gap:.8mm;
 min-height:0;overflow:hidden
 }
-.slip-items li{display:flex;align-items:baseline;gap:2mm;font-size:13.5pt;line-height:1.2}
-.slip-items .qty{font-weight:800;min-width:8mm;flex:0 0 auto}
+.slip-items li{display:flex;align-items:baseline;gap:1.5mm;font-size:11pt;line-height:1.12}
+.slip-items .qty{font-weight:800;min-width:6.5mm;flex:0 0 auto}
 .slip-items .nm{flex:1;font-weight:800;min-width:0;word-break:break-word}
-.slip-items .sz{flex:0 0 auto;font-size:10pt;font-weight:800;color:#111;white-space:nowrap}
-.slip-items .empty-line{color:#666;font-size:10pt;justify-content:center}
-.slip-note{font-size:8.5pt;line-height:1.25;padding:1mm 1.5mm;background:#f3f3f3;border-radius:1mm;flex:0 0 auto;overflow:hidden}
-.slip-note span{display:block;font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.4mm}
+.slip-items .sz{flex:0 0 auto;font-size:8.5pt;font-weight:800;color:#111;white-space:nowrap}
+.slip-items .empty-line{color:#666;font-size:8.5pt;justify-content:center}
+.slip-note{font-size:7pt;line-height:1.15;padding:.6mm 1mm;background:#f3f3f3;border-radius:1mm;flex:0 0 auto;overflow:hidden}
+.slip-note span{display:block;font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-bottom:.2mm}
 .slip-foot{
 display:flex;align-items:baseline;justify-content:space-between;gap:2mm;
-padding-top:.6mm;font-size:11pt;font-weight:700;flex:0 0 auto
+font-size:9.5pt;font-weight:700;flex:0 0 auto
 }
-.slip-foot strong{font-size:17pt;font-weight:800;letter-spacing:-.02em}
-.slip-dense .slip-name{font-size:11.5pt}
-.slip-dense .slip-items{gap:1mm}
-.slip-dense .slip-items li{font-size:11.5pt}
-.slip-dense .slip-items .sz{font-size:9pt}
-.slip-dense .slip-foot strong{font-size:15pt}
+.slip-foot strong{font-size:14pt;font-weight:800;letter-spacing:-.02em}
+.slip-pay{
+display:flex;align-items:center;gap:3mm;flex:0 0 auto;
+padding-top:1mm;border-top:0.7pt solid #bbb
+}
+.slip-qr{
+width:32mm;height:32mm;object-fit:contain;flex:0 0 auto;
+border:0.4pt solid #ccc;border-radius:1mm
+}
+.slip-pay-info{min-width:0;flex:1;line-height:1.2}
+.slip-pay-title{
+font-size:6.5pt;font-weight:800;text-transform:uppercase;
+letter-spacing:.03em;color:#333
+}
+.slip-pay-acc{
+font-size:10pt;font-weight:800;letter-spacing:.05em;
+margin-top:.5mm;font-variant-numeric:tabular-nums
+}
+.slip-pay-bank{font-size:8pt;font-weight:700;margin-top:.4mm}
+.slip-pay-name{font-size:8pt;font-weight:600;color:#222}
+.slip-dense .slip-name{font-size:10pt}
+.slip-dense .slip-items{gap:.5mm}
+.slip-dense .slip-items li{font-size:9.5pt}
+.slip-dense .slip-items .sz{font-size:7.5pt}
+.slip-dense .slip-foot strong{font-size:12pt}
+.slip-dense .slip-qr{width:28mm;height:28mm}
+.slip-dense .slip-pay-acc{font-size:9pt}
+.slip-dense .slip-pay-title{font-size:6pt}
 @media screen{
 body{margin:12px auto}
 .page{outline:1px dashed #ccc;margin:0 auto 12px;box-shadow:0 0 0 1px #ddd}
@@ -1225,7 +1254,8 @@ function exportOrdersPdfA6(ids) {
   }
 
   const orderSheets = Math.ceil(list.length / 2);
-  const sheets = orderSheets + 1; // +1 tờ tổng kết đầu
+  const hasSummary = list.length > 1;
+  const sheets = orderSheets + (hasSummary ? 1 : 0);
   const pages = buildPrintPagesHtml(list);
   const html = `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/>
 <title>Phiếu giao A6 (${list.length} đơn · ${sheets} tờ)</title>
@@ -1254,6 +1284,22 @@ function exportOrdersPdfA6(ids) {
   doc.write(html);
   doc.close();
 
+  const waitImages = () => {
+    const imgs = [...(doc.images || [])];
+    if (!imgs.length) return Promise.resolve();
+    return Promise.all(
+      imgs.map(
+        (img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+              }),
+      ),
+    );
+  };
+
   const runPrint = () => {
     try {
       win.focus();
@@ -1262,15 +1308,15 @@ function exportOrdersPdfA6(ids) {
       toast("Không in được — thử lại");
     }
   };
-  // Đợi layout xong rồi mới print (load event dễ miss sau document.write)
+  // Đợi QR/layout xong rồi mới print
   requestAnimationFrame(() => {
-    setTimeout(runPrint, 120);
+    waitImages().then(() => setTimeout(runPrint, 80));
   });
 
   toast(
     list.length > 1
       ? `${list.length} đơn · ${sheets} tờ A6 (1 tổng kết + ${orderSheets} phiếu)`
-      : "1 tổng kết + phiếu đơn A6",
+      : "In phiếu đơn A6",
   );
   return list.map((o) => o.id);
 }
@@ -1286,9 +1332,10 @@ function openPrintConfirm(ids) {
   if (text) {
     text.textContent =
       n > 1
-        ? `In ${n} đơn (1 tờ tổng kết + ${orderSheets} tờ phiếu). In xong đơn sẽ chuyển sang Đã giao.`
-        : "In phiếu đơn. In xong đơn sẽ chuyển sang Đã giao.";
+        ? `Xác nhận in ${n} đơn đã chọn (1 tờ tổng kết + ${orderSheets} tờ phiếu). In xong sẽ chuyển sang Đã giao.`
+        : "Xác nhận in phiếu đơn. In xong sẽ chuyển sang Đã giao.";
   }
+  document.body.classList.add("confirm-open");
   printConfirmModal?.classList.remove("hidden");
   printConfirmModal?.setAttribute("aria-hidden", "false");
   lockBody(true);
@@ -1299,6 +1346,7 @@ function closePrintConfirm() {
   pendingPrintIds = [];
   printConfirmModal?.classList.add("hidden");
   printConfirmModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
   lockBody(false);
 }
 
@@ -2437,6 +2485,68 @@ $("bulk-export-pdf")?.addEventListener("click", () => {
   openPrintConfirm(ids);
 });
 
+$("bulk-deliver")?.addEventListener("click", () => {
+  const ids = [...selectedOrderIds];
+  if (!ids.length) return;
+  const openIds = ids.filter((id) => {
+    const o = findOrder(id);
+    return o && isOpenStatus(o.status);
+  });
+  if (!openIds.length) {
+    toast("Không có đơn chưa giao trong lựa chọn");
+    return;
+  }
+  openDeliverConfirm(openIds);
+});
+
+function openDeliverConfirm(ids) {
+  pendingDeliverIds = [...new Set(ids.filter(Boolean))];
+  if (!pendingDeliverIds.length) return;
+  const n = pendingDeliverIds.length;
+  const title = $("deliver-confirm-title");
+  const text = $("deliver-confirm-text");
+  if (title) {
+    title.textContent =
+      n > 1 ? `Đánh dấu ${n} đơn đã giao?` : "Đánh dấu đã giao?";
+  }
+  if (text) {
+    text.textContent =
+      n > 1
+        ? `Xác nhận đánh dấu ${n} đơn đã chọn là đã giao (không in phiếu).`
+        : "Xác nhận đánh dấu đơn này là đã giao (không in phiếu).";
+  }
+  document.body.classList.add("confirm-open");
+  deliverConfirmModal?.classList.remove("hidden");
+  deliverConfirmModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("confirm-deliver-order")?.focus());
+}
+
+function closeDeliverConfirm() {
+  pendingDeliverIds = [];
+  deliverConfirmModal?.classList.add("hidden");
+  deliverConfirmModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
+}
+
+$("confirm-deliver-order")?.addEventListener("click", () => {
+  const ids = pendingDeliverIds.slice();
+  closeDeliverConfirm();
+  if (ids.length) setOrdersStatusBulk(ids, "done");
+});
+
+deliverConfirmModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (
+    t.hasAttribute("data-close-deliver-confirm") ||
+    t.closest("[data-close-deliver-confirm]")
+  ) {
+    closeDeliverConfirm();
+  }
+});
+
 $("confirm-print-order")?.addEventListener("click", async () => {
   const ids = pendingPrintIds.slice();
   closePrintConfirm();
@@ -2573,7 +2683,10 @@ deleteModal.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!deleteModal.classList.contains("hidden")) closeDeleteModal();
+  if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
+  else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();
+  else if (!deleteOrderModal?.classList.contains("hidden")) closeDeleteOrderModal();
+  else if (!deleteModal.classList.contains("hidden")) closeDeleteModal();
   else if (!editOrderModal.classList.contains("hidden")) closeEditOrderModal();
   else if (!editModal.classList.contains("hidden")) closeEditModal();
   else if (!orderModal.classList.contains("hidden")) closeOrderModal();

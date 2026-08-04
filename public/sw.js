@@ -1,5 +1,5 @@
 /* Bánh tráng cuộn PWA — bump SHELL_CACHE when shipping shell changes */
-const SHELL_CACHE = "bt-shell-v71";
+const SHELL_CACHE = "bt-shell-v84";
 /** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
 const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
@@ -8,8 +8,12 @@ const PRECACHE = [
   "/styles.css",
   "/app.js",
   "/manifest.webmanifest",
+  "/icons/icon.svg",
   "/icons/icon-192.png",
   "/icons/apple-touch-icon.png",
+  "/icons/favicon-32.png",
+  "/img/logo.png",
+  "/img/qr_code.jpg",
 ];
 
 self.addEventListener("install", (event) => {

@@ -14,6 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="Ghi đơn" />
     <title>Bánh tráng cuộn — Ghi đơn</title>
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/styles.css" />
@@ -33,9 +35,12 @@
   <body>
     <main id="app" class="hidden">
       <header class="topbar">
-        <div class="topbar-text">
-          <p class="brand-mark">Bánh tráng cuộn</p>
-          <h1 id="view-title">Trang chủ</h1>
+        <div class="topbar-brand">
+          <img class="brand-logo" src="/img/logo.png" width="52" height="52" alt="" />
+          <div class="topbar-text">
+            <p class="brand-mark">Bánh tráng cuộn</p>
+            <h1 id="view-title">Trang chủ</h1>
+          </div>
         </div>
         <button type="button" class="icon-btn icon-btn-refresh" id="refresh" aria-label="Tải lại dữ liệu" title="Tải lại">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
@@ -489,6 +494,7 @@
         <div class="order-bulk-actions">
           <button type="button" class="btn ghost" id="bulk-select-all">Chọn tất cả</button>
           <button type="button" class="btn ghost" id="bulk-export-pdf">In PDF A6</button>
+          <button type="button" class="btn primary" id="bulk-deliver">Đã giao</button>
           <button type="button" class="btn danger" id="bulk-delete">Xóa</button>
         </div>
       </div>
@@ -517,6 +523,34 @@
           </button>
           <button type="button" class="btn print-confirm-go full" id="confirm-print-order">
             In ngay
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="deliver-confirm-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-deliver-confirm></div>
+      <div
+        class="modal-sheet modal-sheet-sm modal-sheet-print"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="deliver-confirm-title"
+      >
+        <div class="deliver-confirm-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+          </svg>
+        </div>
+        <h2 id="deliver-confirm-title" class="print-confirm-title">Đánh dấu đã giao?</h2>
+        <p class="print-confirm-text" id="deliver-confirm-text">
+          Xác nhận đánh dấu đã giao cho các đơn đã chọn.
+        </p>
+        <div class="confirm-actions">
+          <button type="button" class="btn ghost full" data-close-deliver-confirm>
+            Hủy
+          </button>
+          <button type="button" class="btn deliver-confirm-go full" id="confirm-deliver-order">
+            Đã giao
           </button>
         </div>
       </div>
