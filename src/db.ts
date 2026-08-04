@@ -377,22 +377,3 @@ export function upcomingDeliveryYmdRange(now = Date.now()): {
 export function nowMs(): number {
   return Date.now();
 }
-
-/** Digits-only phone for matching (VN numbers). */
-export function normalizePhone(phone: string | null | undefined): string {
-  return String(phone || "").replace(/\D/g, "");
-}
-
-/**
- * Customer identity for order-count: prefer phone (≥8 digits), else name.
- * Empty string = cannot attribute.
- */
-export function customerIdentityKey(
-  customer: string | null | undefined,
-  phone: string | null | undefined,
-): string {
-  const p = normalizePhone(phone);
-  if (p.length >= 8) return `p:${p}`;
-  const n = String(customer || "").trim().toLowerCase();
-  return n ? `n:${n}` : "";
-}

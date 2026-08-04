@@ -1622,7 +1622,6 @@ function paintOrdersBoard() {
     el.dataset.orderId = o.id;
     const customerName = formatCustomerName(o.customer);
     const receiver = [customerName, o.phone].filter(Boolean).join(" · ");
-    const orderCount = Math.max(0, Math.floor(Number(o.order_count) || 0));
     const note = (o.note || "").trim();
     const itemsHtml = (o.items || [])
       .map((i, idx) => {
@@ -1713,13 +1712,7 @@ function paintOrdersBoard() {
       <div class="order-main">
         <p class="order-receiver">${
           receiver
-            ? `<span class="order-receiver-dot" aria-hidden="true"></span><span class="order-receiver-text">${escapeHtml(receiver)}</span>${
-                orderCount > 0
-                  ? `<span class="order-buy-count" title="Số lần đặt hàng">${
-                      orderCount === 1 ? "lần đầu" : `${orderCount} lần`
-                    }</span>`
-                  : ""
-              }`
+            ? `<span class="order-receiver-dot" aria-hidden="true"></span><span class="order-receiver-text">${escapeHtml(receiver)}</span>`
             : `<span class="order-receiver-empty">Chưa có tên / SĐT</span>`
         }</p>
         <div class="order-items">${itemsHtml}</div>

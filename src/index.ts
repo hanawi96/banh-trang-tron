@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
 import {
-  customerIdentityKey,
   defaultDeliveryYmd,
   ensureSchema,
   getDb,
@@ -280,27 +279,8 @@ app.get("/api/orders", async (c) => {
     created_at: Number(row.created_at),
   }));
 
-  // All-time order counts per customer (phone first, else name)
-  const countRows = await db.execute(
-    `SELECT customer, phone, COUNT(*) AS cnt FROM orders GROUP BY customer, phone`,
-  );
-  const countByKey = new Map<string, number>();
-  for (const row of countRows.rows) {
-    const key = customerIdentityKey(
-      row.customer ? String(row.customer) : "",
-      row.phone ? String(row.phone) : "",
-    );
-    if (!key) continue;
-    countByKey.set(key, (countByKey.get(key) || 0) + Number(row.cnt || 0));
-  }
-  const ordersWithCount = orders.map((o) => ({
-    ...o,
-    order_count:
-      countByKey.get(customerIdentityKey(o.customer, o.phone)) || 0,
-  }));
-
   return c.json({
-    orders: ordersWithCount,
+    orders,
     range: rangeKey,
     tz: "Asia/Ho_Chi_Minh",
   });
