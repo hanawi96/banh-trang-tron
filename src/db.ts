@@ -23,6 +23,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
         note TEXT,
         customer TEXT,
         phone TEXT,
+        village TEXT,
         delivery_slot TEXT,
         delivery_date TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
@@ -46,6 +47,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_delivered_at ON orders(delivered_at)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_status_delivered ON orders(status, delivered_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_village ON orders(village)`,
     ],
     "write",
   );
@@ -56,6 +58,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
     "status TEXT NOT NULL DEFAULT 'pending'",
     "printed_at INTEGER",
     "delivered_at INTEGER",
+    "village TEXT",
   ]) {
     try {
       await db.execute(`ALTER TABLE orders ADD COLUMN ${col}`);
@@ -90,6 +93,23 @@ export type OrderItem = {
 
 export type DeliverySlot = "trua" | "chieu";
 
+/** Thôn trong xã — danh sách cố định để gom giao */
+export const VILLAGES = [
+  "Đông Cao",
+  "Tráng Việt",
+  "Văn Quán",
+  "Văn Khê",
+  "Hạ Lôi",
+  "Tiền Phong",
+] as const;
+
+export type Village = (typeof VILLAGES)[number];
+
+export function parseVillage(raw: unknown): Village | "" {
+  const s = String(raw ?? "").trim();
+  return (VILLAGES as readonly string[]).includes(s) ? (s as Village) : "";
+}
+
 export type OrderRow = {
   id: string;
   items_json: string;
@@ -97,6 +117,7 @@ export type OrderRow = {
   note: string | null;
   customer: string | null;
   phone: string | null;
+  village: string | null;
   delivery_slot: string | null;
   delivery_date: string | null;
   status: string | null;

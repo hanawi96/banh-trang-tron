@@ -14,6 +14,7 @@ import {
   rangeVn,
   todayRangeVn,
   upcomingDeliveryYmdRange,
+  parseVillage,
   type OrderItem,
   type OrderSize,
 } from "./db";
@@ -207,7 +208,7 @@ app.get("/api/stats", async (c) => {
 
   const [deliveredRes, receivedRes, openRes, products] = await Promise.all([
     db.execute({
-      sql: `SELECT id, items_json, total, customer, phone, delivery_slot, delivery_date,
+      sql: `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
                    delivered_at, printed_at, created_at
             FROM orders
             WHERE status = 'done'
@@ -331,6 +332,7 @@ app.get("/api/stats", async (c) => {
       id: String(row.id),
       customer: row.customer ? String(row.customer) : "",
       phone: row.phone ? String(row.phone) : "",
+      village: row.village ? String(row.village) : "",
       total: Number(row.total) || 0,
       delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
       delivery_date: row.delivery_date ? String(row.delivery_date) : "",
@@ -384,7 +386,7 @@ app.get("/api/orders", async (c) => {
   let result;
   if (rangeKey === "done") {
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
             FROM orders
             WHERE status = 'done'
             ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
@@ -395,7 +397,7 @@ app.get("/api/orders", async (c) => {
     const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
     const { start: createdStart, end: createdEnd } = todayRangeVn();
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
             FROM orders
             WHERE
               (delivery_date >= ? AND delivery_date < ?)
@@ -406,6 +408,15 @@ app.get("/api/orders", async (c) => {
             ORDER BY
               CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
               delivery_date ASC,
+              CASE village
+                WHEN 'Đông Cao' THEN 0
+                WHEN 'Tráng Việt' THEN 1
+                WHEN 'Văn Quán' THEN 2
+                WHEN 'Văn Khê' THEN 3
+                WHEN 'Hạ Lôi' THEN 4
+                WHEN 'Tiền Phong' THEN 5
+                ELSE 9
+              END ASC,
               CASE delivery_slot
                 WHEN 'trua' THEN 0
                 WHEN 'chieu' THEN 1
@@ -418,7 +429,7 @@ app.get("/api/orders", async (c) => {
   } else {
     const { start, end } = rangeVn(rangeKey);
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
             FROM orders
             WHERE created_at >= ? AND created_at < ?
             ORDER BY
@@ -442,6 +453,7 @@ app.get("/api/orders", async (c) => {
     note: row.note ? String(row.note) : "",
     customer: row.customer ? String(row.customer) : "",
     phone: row.phone ? String(row.phone) : "",
+    village: row.village ? String(row.village) : "",
     delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
     delivery_date: row.delivery_date ? String(row.delivery_date) : "",
     status: parseOrderStatus(row.status),
@@ -464,6 +476,7 @@ app.post("/api/orders", async (c) => {
       note?: string;
       customer?: string;
       phone?: string;
+      village?: string;
       delivery_slot?: string;
       delivery_date?: string;
     }>()
@@ -476,6 +489,10 @@ app.post("/api/orders", async (c) => {
   const delivery_slot = body.delivery_slot === "chieu" ? "chieu" : body.delivery_slot === "trua" ? "trua" : "";
   if (!delivery_slot) {
     return c.json({ error: "Chọn giao trưa hoặc giao chiều" }, 400);
+  }
+  const village = parseVillage(body.village);
+  if (!village) {
+    return c.json({ error: "Chọn thôn giao hàng" }, 400);
   }
   const created_at = nowMs();
   const delivery_date =
@@ -497,8 +514,8 @@ app.post("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   await db.execute({
-    sql: `INSERT INTO orders (id, items_json, total, note, customer, phone, delivery_slot, delivery_date, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    sql: `INSERT INTO orders (id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     args: [
       id,
       JSON.stringify(items),
@@ -506,6 +523,7 @@ app.post("/api/orders", async (c) => {
       note || null,
       customer || null,
       phone || null,
+      village,
       delivery_slot,
       delivery_date,
       created_at,
@@ -518,6 +536,7 @@ app.post("/api/orders", async (c) => {
       ok: true,
       id,
       total,
+      village,
       delivery_slot,
       delivery_date,
       status: "pending",
@@ -567,6 +586,7 @@ app.put("/api/orders/:id", async (c) => {
       note?: string;
       customer?: string;
       phone?: string;
+      village?: string;
       delivery_slot?: string;
       delivery_date?: string;
     }>()
@@ -584,6 +604,10 @@ app.put("/api/orders/:id", async (c) => {
         : "";
   if (!delivery_slot) {
     return c.json({ error: "Chọn giao trưa hoặc giao chiều" }, 400);
+  }
+  const village = parseVillage(body.village);
+  if (!village) {
+    return c.json({ error: "Chọn thôn giao hàng" }, 400);
   }
 
   const parsed = parseOrderItems(body.items);
@@ -630,7 +654,7 @@ app.put("/api/orders/:id", async (c) => {
 
   await db.execute({
     sql: `UPDATE orders
-          SET items_json = ?, total = ?, note = ?, customer = ?, phone = ?, delivery_slot = ?, delivery_date = ?
+          SET items_json = ?, total = ?, note = ?, customer = ?, phone = ?, village = ?, delivery_slot = ?, delivery_date = ?
           WHERE id = ?`,
     args: [
       JSON.stringify(items),
@@ -638,6 +662,7 @@ app.put("/api/orders/:id", async (c) => {
       note || null,
       customer || null,
       phone || null,
+      village,
       delivery_slot,
       delivery_date,
       id,

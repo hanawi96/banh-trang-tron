@@ -276,7 +276,7 @@ function finishBoot() {
 
 function revealApp() {
   appEl.classList.remove("hidden");
-  setTab("orders");
+  setTab(tabFromLocation());
   finishBoot();
 }
 
@@ -481,7 +481,8 @@ function openDeliveredListModal() {
         const name = formatCustomerName(o.customer) || "Khách";
         const receiver = [name, (o.phone || "").trim()].filter(Boolean).join(" · ");
         const slot = o.delivery_slot === "chieu" ? "chieu" : o.delivery_slot === "trua" ? "trua" : "";
-        const when = [deliveryDateLabel(o.delivery_date || ""), slotLabel(slot)]
+        const village = parseVillage(o.village) || (o.village ? String(o.village) : "");
+        const when = [village, deliveryDateLabel(o.delivery_date || ""), slotLabel(slot)]
           .filter(Boolean)
           .join(" · ");
         const deliveredAt = formatVnDateTime(o.delivered_at) || "—";
@@ -860,6 +861,7 @@ function openCreateOrder() {
     "delivery_date",
     defaultDeliveryYmd(),
   );
+  renderVillageOptions("order-village-options", "village", "");
   const chieu = document.querySelector('input[name="delivery_slot"][value="chieu"]');
   if (chieu instanceof HTMLInputElement) chieu.checked = true;
   renderCartLines();
@@ -1114,7 +1116,11 @@ function buildOrderSlipHtml(order, index, total, half) {
   const phone = (order.phone || "").trim();
   const note = (order.note || "").trim();
   const slot = order.delivery_slot === "chieu" ? "chieu" : order.delivery_slot === "trua" ? "trua" : "";
-  const when = [deliveryDateLabel(order.delivery_date || ""), slotLabel(slot)]
+  const when = [
+    order.village ? String(order.village) : "",
+    deliveryDateLabel(order.delivery_date || ""),
+    slotLabel(slot),
+  ]
     .filter(Boolean)
     .join(" · ");
   const items = Array.isArray(order.items) ? order.items : [];
@@ -1359,7 +1365,7 @@ body{margin:12px auto}
  */
 function exportOrdersPdfA6(ids) {
   const idSet = new Set(ids);
-  const list = ordersCache.filter((o) => idSet.has(o.id));
+  const list = sortOrders(ordersCache.filter((o) => idSet.has(o.id)));
   if (!list.length) {
     toast("Không tìm thấy đơn đã chọn");
     return null;
@@ -1535,13 +1541,13 @@ function sortOrders(list) {
       if (!db) return -1;
       return da < db ? -1 : 1;
     }
-    // Trưa trước, chiều sau
+    // Cùng ngày: gom theo thôn rồi ca giao
+    const villageDiff = villageRank(a.village) - villageRank(b.village);
+    if (villageDiff !== 0) return villageDiff;
     const slotDiff = slotRank(a.delivery_slot) - slotRank(b.delivery_slot);
     if (slotDiff !== 0) return slotDiff;
-    // Chưa giao (pending/printed) trước, đã giao sau
     const st = statusRank(a.status) - statusRank(b.status);
     if (st !== 0) return st;
-    // Trong cùng trạng thái: đơn sớm nhất lên trên
     return Number(a.created_at) - Number(b.created_at);
   });
 }
@@ -1655,7 +1661,18 @@ function paintOrdersBoard() {
   }
 
   const frag = document.createDocumentFragment();
+  let lastVillageKey = null;
+  const showVillageGroups = orderFilter !== "done";
   for (const o of visible) {
+    const villageName = parseVillage(o.village) || (o.village ? String(o.village) : "");
+    const villageKey = villageName || "__none__";
+    if (showVillageGroups && villageKey !== lastVillageKey) {
+      lastVillageKey = villageKey;
+      const group = document.createElement("div");
+      group.className = "order-village-group";
+      group.textContent = villageName || "Chưa chọn thôn";
+      frag.appendChild(group);
+    }
     const el = document.createElement("article");
     const status = normalizeStatus(o.status);
     el.className = `order order-${status}`;
@@ -1691,6 +1708,9 @@ function paintOrdersBoard() {
     const whenText = [dateText, slotText].filter(Boolean).join(" · ");
     const statusText = statusLabel(status);
     const checked = selectedOrderIds.has(o.id) ? "checked" : "";
+    const villageBadge = villageName
+      ? `<span class="order-village">${escapeHtml(villageName)}</span>`
+      : "";
     const actionBtn =
       status === "done"
         ? "Hoàn tác · Chưa giao"
@@ -1738,6 +1758,7 @@ function paintOrdersBoard() {
           <span class="time" title="Giờ nhận đơn">${timeFmt.format(o.created_at)}</span>
           <div class="order-badges">
             <span class="order-status order-status-${status}">${statusText}</span>
+            ${villageBadge}
             ${
               whenText
                 ? `<span class="order-slot order-slot-${slot || "none"}">${escapeHtml(whenText)}</span>`
@@ -1965,11 +1986,26 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
   }
 }
 
-/** Tracks active tab so boot → setTab("orders") does not double-fetch */
+/** Tracks active tab so boot → setTab does not double-fetch */
 let activeTab = "orders";
+const TAB_IDS = new Set(["orders", "products", "stats"]);
 
-function setTab(tab) {
+function tabFromLocation() {
+  const raw = (location.hash || "").replace(/^#\/?/, "").split(/[/?#]/)[0];
+  return TAB_IDS.has(raw) ? raw : "orders";
+}
+
+function syncTabHash(tab) {
+  const want = `#${tab}`;
+  if (location.hash === want) return;
+  // replaceState: đổi URL không chồng history mỗi lần bấm tab
+  history.replaceState(null, "", want);
+}
+
+function setTab(tab, { fromUrl = false } = {}) {
+  if (!TAB_IDS.has(tab)) tab = "orders";
   const prev = activeTab;
+  const same = tab === activeTab;
   activeTab = tab;
   $("tab-products").classList.toggle("hidden", tab !== "products");
   $("tab-orders").classList.toggle("hidden", tab !== "orders");
@@ -1983,7 +2019,9 @@ function setTab(tab) {
     selectedOrderIds.clear();
     updateBulkBar();
   }
-  // Only refetch when user switches into the tab (not when already there / boot)
+  if (!fromUrl) syncTabHash(tab);
+  // Only refetch when user switches into the tab (not when already there)
+  if (same && prev === tab) return;
   if (tab === "orders") {
     if (prev !== "orders") loadOrders().catch(() => {});
   } else if (tab === "products") {
@@ -2109,6 +2147,45 @@ function slotLabel(slot) {
   if (slot === "trua") return "Trưa";
   if (slot === "chieu") return "Chiều";
   return "";
+}
+
+/** Thôn cố định trong xã — gom đơn đi giao */
+const VILLAGES = [
+  "Đông Cao",
+  "Tráng Việt",
+  "Văn Quán",
+  "Văn Khê",
+  "Hạ Lôi",
+  "Tiền Phong",
+];
+
+function parseVillage(raw) {
+  const s = String(raw || "").trim();
+  return VILLAGES.includes(s) ? s : "";
+}
+
+function villageRank(village) {
+  const i = VILLAGES.indexOf(String(village || "").trim());
+  return i >= 0 ? i : 99;
+}
+
+function selectedVillage(name = "village") {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el instanceof HTMLInputElement ? parseVillage(el.value) : "";
+}
+
+function renderVillageOptions(rootId, inputName, selected) {
+  const root = $(rootId);
+  if (!root) return;
+  const chosen = parseVillage(selected);
+  root.innerHTML = VILLAGES.map((v) => {
+    const checked = v === chosen ? "checked" : "";
+    return `<label class="slot-option">
+      <input type="radio" name="${escapeHtml(inputName)}" value="${escapeHtml(v)}" ${checked} />
+      <span>${escapeHtml(v)}</span>
+    </label>`;
+  }).join("");
+  root.classList.remove("is-invalid");
 }
 
 function selectedDeliverySlot(name = "delivery_slot") {
@@ -2280,6 +2357,11 @@ function openEditOrderModal(order) {
   setDeliverySlot(
     "edit_delivery_slot",
     order.delivery_slot === "chieu" ? "chieu" : "trua",
+  );
+  renderVillageOptions(
+    "edit-order-village-options",
+    "edit_village",
+    order.village || "",
   );
   renderEditOrderItems();
   renderProductList(editOrderMenuEl, { manage: false });
@@ -2570,6 +2652,11 @@ document.querySelector(".tabbar").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-go]");
   if (!btn) return;
   setTab(btn.getAttribute("data-go"));
+});
+
+window.addEventListener("hashchange", () => {
+  const next = tabFromLocation();
+  if (next !== activeTab) setTab(next, { fromUrl: true });
 });
 
 document.querySelector(".stats-filters")?.addEventListener("click", (e) => {
@@ -2912,6 +2999,15 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const village = selectedVillage("edit_village");
+  if (!village) {
+    showComposeIssue(
+      $("edit-order-village-options")?.closest(".slot-field") ||
+        $("edit-order-village-options"),
+      "Chọn thôn giao hàng",
+    );
+    return;
+  }
   const delivery_date =
     selectedDeliveryDate("edit_delivery_date") || defaultDeliveryYmd();
   const label = saveEditOrderBtn?.querySelector(".btn-label");
@@ -2932,6 +3028,7 @@ $("edit-order-form").addEventListener("submit", async (e) => {
         })),
         delivery_slot,
         delivery_date,
+        village,
         customer,
         phone: $("edit-order-phone").value.trim(),
         note: $("edit-order-note").value.trim(),
@@ -3065,6 +3162,14 @@ $("order-form").addEventListener("submit", async (e) => {
     toast("Chọn giao trưa hoặc giao chiều");
     return;
   }
+  const village = selectedVillage("village");
+  if (!village) {
+    showComposeIssue(
+      $("order-village-options")?.closest(".slot-field") || $("order-village-options"),
+      "Chọn thôn giao hàng",
+    );
+    return;
+  }
   const delivery_date =
     selectedDeliveryDate("delivery_date") || defaultDeliveryYmd();
   const items = cart.map((line) => ({
@@ -3086,6 +3191,7 @@ $("order-form").addEventListener("submit", async (e) => {
         items,
         delivery_slot,
         delivery_date,
+        village,
         customer,
         phone: $("customer-phone").value.trim(),
         note: $("order-note").value.trim(),
