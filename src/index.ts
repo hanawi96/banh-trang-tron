@@ -246,10 +246,17 @@ app.get("/api/stats", async (c) => {
   let revTrua = 0;
   let revChieu = 0;
   let revOther = 0;
-  /** @type {Map<string, {name:string, qty:number, revenue:number}>} */
+  /** @type {Map<string, {id:string, name:string, size:OrderSize, qty:number, revenue:number, image:string}>} */
   const byProduct = new Map<
     string,
-    { name: string; qty: number; revenue: number }
+    {
+      id: string;
+      name: string;
+      size: OrderSize;
+      qty: number;
+      revenue: number;
+      image: string;
+    }
   >();
 
   for (const row of deliveredRes.rows) {
@@ -278,14 +285,22 @@ app.get("/api/stats", async (c) => {
       if (qty < 1) continue;
       const price = Number(item.price) || 0;
       const size: OrderSize = item.size === "to" ? "to" : "nho";
-      const cost = unitCost(String(item.id || ""), size, price);
+      const productId = String(item.id || "");
+      const cost = unitCost(productId, size, price);
       profit += qty * (price - cost);
-      const key = `${item.id || item.name}:${size}`;
+      const catalog = productId ? productMap.get(productId) : undefined;
+      const key = `${productId || item.name}:${size}`;
       const prev = byProduct.get(key) || {
-        name: `${String(item.name || "Món").trim() || "Món"} (${sizeLabel(size)})`,
+        id: productId,
+        name: String(item.name || catalog?.name || "Món").trim() || "Món",
+        size,
         qty: 0,
         revenue: 0,
+        image: String(catalog?.image || item.image || ""),
       };
+      if (!prev.image) {
+        prev.image = String(catalog?.image || item.image || "");
+      }
       prev.qty += qty;
       prev.revenue += qty * price;
       byProduct.set(key, prev);
@@ -294,7 +309,16 @@ app.get("/api/stats", async (c) => {
 
   const topProducts = [...byProduct.values()]
     .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      size: p.size,
+      sizeLabel: sizeLabel(p.size),
+      qty: p.qty,
+      revenue: p.revenue,
+      image: p.image,
+    }));
 
   const deliveredOrders = deliveredRes.rows.map((row) => {
     let items: OrderItem[] = [];

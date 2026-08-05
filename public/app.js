@@ -358,16 +358,41 @@ function renderStats() {
 
   const topHtml = topProducts.length
     ? topProducts
-        .map(
-          (p, i) => `
-        <div class="stats-rank-row">
-          <span class="stats-rank">#${i + 1}</span>
-          <div class="stats-rank-info">
-            <strong>${escapeHtml(p.name)}</strong>
-            <span>${p.qty} suất · ${vnd.format(p.revenue)}</span>
+        .map((p, i) => {
+          const imgPath = imagesPath(p.image);
+          const catalog = p.id
+            ? products.find((x) => x.id === p.id)
+            : null;
+          const imgSrc =
+            (catalog && imageUrl(catalog)) ||
+            (imgPath ? imgPath : "");
+          const sizeText = p.sizeLabel || sizeLabel(p.size);
+          const thumb = imgSrc
+            ? `<img class="stats-sold-thumb" src="${escapeHtml(imgSrc)}" alt="" width="56" height="56" decoding="async" loading="lazy" />`
+            : `<div class="stats-sold-thumb stats-sold-thumb-empty" aria-hidden="true"></div>`;
+          return `
+        <article class="stats-sold-row">
+          <div class="stats-sold-media">
+            ${thumb}
+            <span class="stats-sold-rank">#${i + 1}</span>
           </div>
-        </div>`,
-        )
+          <div class="stats-sold-body">
+            <div class="stats-sold-title">
+              <strong>${escapeHtml(p.name || "Món")}</strong>
+              ${
+                sizeText
+                  ? `<span class="stats-sold-size">${escapeHtml(sizeText)}</span>`
+                  : ""
+              }
+            </div>
+            <div class="stats-sold-meta">
+              <span>${p.qty} suất</span>
+              <span class="stats-sold-dot" aria-hidden="true">·</span>
+              <span class="stats-sold-rev">${vnd.format(p.revenue)}</span>
+            </div>
+          </div>
+        </article>`;
+        })
         .join("")
     : deliveredCount
       ? `<p class="empty">Chưa có dữ liệu món.</p>`
@@ -427,7 +452,7 @@ function renderStats() {
     </div>
     <div class="stats-section">
       <h3>Món đã bán</h3>
-      <div class="stats-rank-list">${topHtml}</div>
+      <div class="stats-sold-list">${topHtml}</div>
     </div>
   `;
   $("stats-open-delivered")?.addEventListener("click", () => {
@@ -2297,6 +2322,7 @@ function clearPreviewUrl() {
   }
 }
 
+/** Open edit product modal first; defer image + focus so sheet paints instantly */
 function openEditModal(product) {
   editingProduct = product;
   pendingImageFile = null;
@@ -2312,17 +2338,36 @@ function openEditModal(product) {
   $("edit-cost-large").value = String(
     product.cost_large ?? Math.max(0, (product.cost ?? 0) + 2000),
   );
-  editPreview.src = imageUrl(product);
+
+  // Don't block first paint on full-size image decode
+  editPreview.removeAttribute("src");
+  editPreview.alt = product.name || "";
+  editPreview.decoding = "async";
+
   editModal.classList.remove("hidden");
   editModal.setAttribute("aria-hidden", "false");
   lockBody(true);
-  requestAnimationFrame(() => $("edit-name").focus());
+
+  const productId = product.id;
+  const listImg = menuEl?.querySelector(
+    `[data-product-id="${CSS.escape(productId)}"] img.product-thumb`,
+  );
+  const cachedSrc =
+    listImg instanceof HTMLImageElement && listImg.currentSrc
+      ? listImg.currentSrc
+      : "";
+  // After modal is visible — don't block open on decode
+  queueMicrotask(() => {
+    if (editingProduct?.id !== productId) return;
+    editPreview.src = cachedSrc || imageUrl(product);
+  });
 }
 
 function closeEditModal() {
   editingProduct = null;
   pendingImageFile = null;
   clearPreviewUrl();
+  editPreview.removeAttribute("src");
   editModal.classList.add("hidden");
   editModal.setAttribute("aria-hidden", "true");
   lockBody(false);
