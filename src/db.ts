@@ -252,6 +252,15 @@ export function defaultDeliveryYmd(now = Date.now()): string {
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Validate YYYY-MM-DD as a real Vietnam calendar day */
+export function parseYmd(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!YMD_RE.test(s)) return null;
+  const t = Date.parse(`${s}T12:00:00+07:00`);
+  if (!Number.isFinite(t)) return null;
+  return vnYmd(t) === s ? s : null;
+}
+
 export function parseDeliveryDate(
   raw: string | null | undefined,
   now = Date.now(),
@@ -373,6 +382,26 @@ export function rangeVn(
     default:
       return { start: todayStart, end: tomorrow };
   }
+}
+
+/**
+ * Inclusive VN calendar days → half-open [start, end) unix ms.
+ * Swaps if from > to. Rejects span > 366 days.
+ */
+export function ymdRangeToUnix(
+  fromRaw: unknown,
+  toRaw: unknown,
+): { start: number; end: number; from: string; to: string } | null {
+  const fromYmd = parseYmd(fromRaw);
+  const toYmd = parseYmd(toRaw);
+  if (!fromYmd || !toYmd) return null;
+  const from = fromYmd <= toYmd ? fromYmd : toYmd;
+  const to = fromYmd <= toYmd ? toYmd : fromYmd;
+  const start = Date.parse(`${from}T00:00:00+07:00`);
+  const end = Date.parse(`${to}T00:00:00+07:00`) + DAY_MS;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (end - start > 366 * DAY_MS) return null;
+  return { start, end, from, to };
 }
 
 export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey {

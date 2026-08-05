@@ -15,6 +15,8 @@ import {
   todayRangeVn,
   upcomingDeliveryYmdRange,
   parseVillage,
+  VILLAGES,
+  ymdRangeToUnix,
   type OrderItem,
   type OrderSize,
 } from "./db";
@@ -203,8 +205,10 @@ app.delete("/api/products/:id", async (c) => {
 app.get("/api/stats", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
+  const custom = ymdRangeToUnix(c.req.query("from"), c.req.query("to"));
   const rangeKey = parseStatsRangeKey(c.req.query("range"));
-  const { start, end } = rangeVn(rangeKey);
+  const { start, end } = custom ?? rangeVn(rangeKey);
+  const rangeOut = custom ? "custom" : rangeKey;
 
   const [deliveredRes, receivedRes, openRes, products] = await Promise.all([
     db.execute({
@@ -218,8 +222,11 @@ app.get("/api/stats", async (c) => {
       args: [start, end],
     }),
     db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM orders
-            WHERE created_at >= ? AND created_at < ?`,
+      sql: `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
+                   status, delivered_at, printed_at, created_at
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+            ORDER BY created_at DESC`,
       args: [start, end],
     }),
     db.execute({
@@ -247,6 +254,11 @@ app.get("/api/stats", async (c) => {
   let revTrua = 0;
   let revChieu = 0;
   let revOther = 0;
+  const villageStats = new Map<string, { count: number; revenue: number }>();
+  for (const v of VILLAGES) {
+    villageStats.set(v, { count: 0, revenue: 0 });
+  }
+  let unknownVillage = { count: 0, revenue: 0 };
   /** @type {Map<string, {id:string, name:string, size:OrderSize, qty:number, revenue:number, image:string}>} */
   const byProduct = new Map<
     string,
@@ -273,6 +285,16 @@ app.get("/api/stats", async (c) => {
     } else {
       countOther += 1;
       revOther += total;
+    }
+
+    const village = parseVillage(row.village);
+    if (village) {
+      const vs = villageStats.get(village)!;
+      vs.count += 1;
+      vs.revenue += total;
+    } else {
+      unknownVillage.count += 1;
+      unknownVillage.revenue += total;
     }
 
     let items: OrderItem[] = [];
@@ -307,6 +329,22 @@ app.get("/api/stats", async (c) => {
       byProduct.set(key, prev);
     }
   }
+
+  const byVillage = [
+    ...VILLAGES.map((village) => {
+      const vs = villageStats.get(village)!;
+      return { village, count: vs.count, revenue: vs.revenue };
+    }),
+    ...(unknownVillage.count > 0
+      ? [
+          {
+            village: "Chưa chọn thôn",
+            count: unknownVillage.count,
+            revenue: unknownVillage.revenue,
+          },
+        ]
+      : []),
+  ];
 
   const topProducts = [...byProduct.values()]
     .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
@@ -348,11 +386,37 @@ app.get("/api/stats", async (c) => {
   });
 
   const deliveredCount = deliveredOrders.length;
-  const receivedCount = Number(receivedRes.rows[0]?.cnt || 0);
+  const receivedOrders = receivedRes.rows.map((row) => {
+    let items: OrderItem[] = [];
+    try {
+      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
+    } catch {
+      items = [];
+    }
+    return {
+      id: String(row.id),
+      customer: row.customer ? String(row.customer) : "",
+      phone: row.phone ? String(row.phone) : "",
+      village: row.village ? String(row.village) : "",
+      total: Number(row.total) || 0,
+      status: parseOrderStatus(row.status),
+      delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
+      delivery_date: row.delivery_date ? String(row.delivery_date) : "",
+      created_at: parseTs(row.created_at),
+      items: items.map((i) => ({
+        name: String(i.name || "Món"),
+        qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+        size: i.size === "to" ? "to" : "nho",
+      })),
+    };
+  });
+  const receivedCount = receivedOrders.length;
   const openCount = Number(openRes.rows[0]?.cnt || 0);
 
   return c.json({
-    range: rangeKey,
+    range: rangeOut,
+    from: custom?.from ?? null,
+    to: custom?.to ?? null,
     tz: "Asia/Ho_Chi_Minh",
     revenue,
     profit,
@@ -364,8 +428,10 @@ app.get("/api/stats", async (c) => {
       chieu: { count: countChieu, revenue: revChieu },
       other: { count: countOther, revenue: revOther },
     },
+    byVillage,
     topProducts,
     deliveredOrders,
+    receivedOrders,
   });
 });
 

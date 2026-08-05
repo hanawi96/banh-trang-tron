@@ -107,6 +107,17 @@
             <button type="button" class="order-filter" data-stats-range="30d">
               30 ngày
             </button>
+            <button
+              type="button"
+              class="order-filter stats-cal-btn"
+              id="stats-open-calendar"
+              aria-label="Chọn ngày cụ thể"
+              title="Chọn ngày"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+              </svg>
+            </button>
           </div>
         </div>
         <div id="stats" class="stats-wrap">
@@ -538,9 +549,64 @@
         </header>
         <p class="delivered-list-meta" id="delivered-list-meta"></p>
         <div class="delivered-list" id="delivered-list"></div>
+        <div class="delivered-list-pager hidden" id="delivered-list-pager">
+          <button type="button" class="btn ghost" id="delivered-list-prev" aria-label="Trang trước">
+            Trước
+          </button>
+          <span class="delivered-list-page" id="delivered-list-page">1 / 1</span>
+          <button type="button" class="btn ghost" id="delivered-list-next" aria-label="Trang sau">
+            Sau
+          </button>
+        </div>
         <button type="button" class="btn primary full" data-close-delivered-list>
           Đóng
         </button>
+      </div>
+    </div>
+
+    <div id="stats-date-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-stats-date></div>
+      <div
+        class="modal-sheet modal-sheet-stats-date"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stats-date-title"
+      >
+        <header class="prepare-head">
+          <div>
+            <p class="prepare-kicker">Thống kê</p>
+            <h2 id="stats-date-title">Chọn thời gian</h2>
+          </div>
+          <button type="button" class="icon-btn" data-close-stats-date aria-label="Đóng">
+            Đóng
+          </button>
+        </header>
+        <div class="stats-date-modes" role="tablist" aria-label="Kiểu chọn">
+          <button type="button" class="stats-date-mode active" data-stats-date-mode="day">
+            Một ngày
+          </button>
+          <button type="button" class="stats-date-mode" data-stats-date-mode="range">
+            Khoảng ngày
+          </button>
+        </div>
+        <div class="stats-cal-nav">
+          <button type="button" class="stats-cal-nav-btn" id="stats-cal-prev" aria-label="Tháng trước">
+            ‹
+          </button>
+          <h3 class="stats-cal-month" id="stats-cal-month">Tháng</h3>
+          <button type="button" class="stats-cal-nav-btn" id="stats-cal-next" aria-label="Tháng sau">
+            ›
+          </button>
+        </div>
+        <div class="stats-cal-weekdays" aria-hidden="true">
+          <span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span><span>CN</span>
+        </div>
+        <div class="stats-cal-grid" id="stats-cal-grid" role="grid" aria-label="Lịch"></div>
+        <p class="stats-cal-summary" id="stats-cal-summary"></p>
+        <div class="stats-cal-actions">
+          <button type="button" class="btn ghost" data-close-stats-date>Hủy</button>
+          <button type="button" class="btn primary" id="stats-cal-apply">Áp dụng</button>
+        </div>
       </div>
     </div>
 

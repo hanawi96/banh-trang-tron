@@ -12,6 +12,7 @@ const printConfirmModal = $("print-confirm-modal");
 const deliverConfirmModal = $("deliver-confirm-modal");
 const prepareModal = $("prepare-modal");
 const deliveredListModal = $("delivered-list-modal");
+const statsDateModal = $("stats-date-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -44,8 +45,19 @@ let doneOrdersCache = [];
 let doneOrdersLoadPromise = null;
 /** @type {Array<any>} */
 let statsPayload = null;
-/** @type {'today'|'yesterday'|'7d'|'30d'} */
+/** @type {'today'|'yesterday'|'7d'|'30d'|'custom'} */
 let statsRange = "today";
+/** @type {string|null} YYYY-MM-DD */
+let statsCustomFrom = null;
+/** @type {string|null} YYYY-MM-DD */
+let statsCustomTo = null;
+/** @type {'day'|'range'} */
+let statsDateMode = "day";
+/** First day of visible calendar month YYYY-MM-DD */
+let statsCalMonthYmd = "";
+/** Draft selection in date modal */
+let statsPickFrom = "";
+let statsPickTo = "";
 /** @type {'pending'|'done'|'all'} — pending filter = chưa giao (pending|printed) */
 let orderFilter = "pending";
 /** @type {Set<string>} */
@@ -287,6 +299,22 @@ const STATS_RANGE_LABEL = {
   "30d": "30 ngày qua",
 };
 
+function formatYmdVn(ymd) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(ymd || "");
+  return `${Number(m[3])}/${Number(m[2])}/${m[1]}`;
+}
+
+function statsPeriodLabel() {
+  if (statsRange === "custom" && statsCustomFrom && statsCustomTo) {
+    if (statsCustomFrom === statsCustomTo) {
+      return formatYmdVn(statsCustomFrom);
+    }
+    return `${formatYmdVn(statsCustomFrom)} – ${formatYmdVn(statsCustomTo)}`;
+  }
+  return STATS_RANGE_LABEL[statsRange] || "Hôm nay";
+}
+
 function normalizeSize(size) {
   return size === "to" ? "to" : "nho";
 }
@@ -331,7 +359,7 @@ function productUnitCost(product, size) {
 function renderStats() {
   const root = $("stats");
   if (!root) return;
-  const label = STATS_RANGE_LABEL[statsRange] || "Hôm nay";
+  const label = statsPeriodLabel();
   const s = statsPayload;
   if (!s) {
     root.innerHTML = `<p class="empty">Chưa có dữ liệu thống kê.</p>`;
@@ -403,6 +431,27 @@ function renderStats() {
       ? `<p class="stats-slot-note">${other.count} đơn không gán ca · ${vnd.format(other.revenue)}</p>`
       : "";
 
+  const byVillage = Array.isArray(s.byVillage) ? s.byVillage : [];
+  const villageHtml = byVillage.length
+    ? byVillage
+        .map((v) => {
+          const name = String(v.village || "—");
+          const count = Number(v.count) || 0;
+          const rev = Number(v.revenue) || 0;
+          const tag = count > 0 ? "button" : "article";
+          const clickable =
+            count > 0
+              ? ` type="button" class="stats-card stats-card-btn stats-village-card" data-stats-village="${escapeHtml(name)}"`
+              : ` class="stats-card stats-card-muted"`;
+          return `<${tag}${clickable}>
+          <span>${escapeHtml(name)}</span>
+          <strong>${count} <small class="stats-village-unit">đơn</small></strong>
+          <small>${count ? vnd.format(rev) : "—"}</small>
+        </${tag}>`;
+        })
+        .join("")
+    : `<p class="empty">Chưa có dữ liệu thôn.</p>`;
+
   root.innerHTML = `
     <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao thành công · giờ VN</p>
     <div class="stats-hero">
@@ -423,11 +472,13 @@ function renderStats() {
         <strong class="ok">${deliveredCount}</strong>
         <small>${deliveredCount > 0 ? "bấm để xem" : "trong kỳ"}</small>
       </button>
-      <article class="stats-card">
+      <button type="button" class="stats-card stats-card-btn"${
+        receivedCount > 0 ? ` id="stats-open-received"` : " disabled"
+      }>
         <span>Nhận đơn</span>
         <strong>${receivedCount}</strong>
-        <small>trong kỳ</small>
-      </article>
+        <small>${receivedCount > 0 ? "bấm để xem" : "trong kỳ"}</small>
+      </button>
       <article class="stats-card stats-card-open">
         <span>Chưa giao</span>
         <strong class="warn">${openCount}</strong>
@@ -451,12 +502,24 @@ function renderStats() {
       ${otherNote}
     </div>
     <div class="stats-section">
+      <h3>Theo thôn</h3>
+      <div class="stats-village-grid">${villageHtml}</div>
+    </div>
+    <div class="stats-section">
       <h3>Món đã bán</h3>
       <div class="stats-sold-list">${topHtml}</div>
     </div>
   `;
   $("stats-open-delivered")?.addEventListener("click", () => {
     openDeliveredListModal();
+  });
+  $("stats-open-received")?.addEventListener("click", () => {
+    openReceivedListModal();
+  });
+  root.querySelectorAll("[data-stats-village]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openVillageOrdersModal(btn.getAttribute("data-stats-village") || "");
+    });
   });
 }
 
@@ -467,16 +530,98 @@ function openDeliveredListModal() {
     toast("Chưa có đơn đã giao trong kỳ này");
     return;
   }
-  const label = STATS_RANGE_LABEL[statsRange] || "Hôm nay";
-  const title = $("delivered-list-title");
-  const meta = $("delivered-list-meta");
-  const listEl = $("delivered-list");
-  if (title) title.textContent = `Đã giao · ${orders.length} đơn`;
-  if (meta) {
-    meta.textContent = `${label} · theo giờ giao thành công (VN)`;
+  const label = statsPeriodLabel();
+  fillStatsOrdersModal({
+    title: `Đã giao · ${orders.length} đơn`,
+    meta: `${label} · theo giờ giao thành công (VN)`,
+    orders,
+    timeKind: "delivered",
+  });
+}
+
+function openReceivedListModal() {
+  const s = statsPayload;
+  const orders = Array.isArray(s?.receivedOrders) ? s.receivedOrders : [];
+  if (!orders.length) {
+    toast("Chưa nhận đơn nào trong kỳ này");
+    return;
   }
+  const label = statsPeriodLabel();
+  fillStatsOrdersModal({
+    title: `Nhận đơn · ${orders.length} đơn`,
+    meta: `${label} · theo giờ tạo đơn (VN)`,
+    orders,
+    timeKind: "received",
+  });
+}
+
+function openVillageOrdersModal(villageName) {
+  const s = statsPayload;
+  const all = Array.isArray(s?.deliveredOrders) ? s.deliveredOrders : [];
+  const name = String(villageName || "").trim();
+  const unknown = name === "Chưa chọn thôn";
+  const orders = all.filter((o) => {
+    const v = parseVillage(o.village) || "";
+    if (unknown) return !v;
+    return v === name;
+  });
+  if (!orders.length) {
+    toast(unknown ? "Không có đơn chưa chọn thôn" : `Chưa có đơn ở ${name}`);
+    return;
+  }
+  const label = statsPeriodLabel();
+  fillStatsOrdersModal({
+    title: `${name} · ${orders.length} đơn`,
+    meta: `${label} · đã giao trong kỳ (VN)`,
+    orders,
+    timeKind: "delivered",
+  });
+}
+
+/** @param {{ title: string, meta: string, orders: any[], timeKind: 'delivered'|'received' }} opts */
+const STATS_MODAL_PAGE_SIZE = 20;
+/** @type {any[]} */
+let statsModalOrders = [];
+/** @type {'delivered'|'received'} */
+let statsModalTimeKind = "delivered";
+let statsModalPage = 1;
+
+function fillStatsOrdersModal({ title, meta, orders, timeKind }) {
+  const titleEl = $("delivered-list-title");
+  const metaEl = $("delivered-list-meta");
+  if (titleEl) titleEl.textContent = title;
+  if (metaEl) metaEl.textContent = meta;
+  statsModalOrders = Array.isArray(orders) ? orders : [];
+  statsModalTimeKind = timeKind === "received" ? "received" : "delivered";
+  statsModalPage = 1;
+  paintStatsOrdersModalPage();
+  document.body.classList.add("confirm-open");
+  deliveredListModal?.classList.remove("hidden");
+  deliveredListModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() =>
+    deliveredListModal?.querySelector("[data-close-delivered-list]")?.focus(),
+  );
+}
+
+function statsModalPageCount() {
+  return Math.max(1, Math.ceil(statsModalOrders.length / STATS_MODAL_PAGE_SIZE));
+}
+
+function paintStatsOrdersModalPage() {
+  const listEl = $("delivered-list");
+  const pager = $("delivered-list-pager");
+  const pageEl = $("delivered-list-page");
+  const prevBtn = $("delivered-list-prev");
+  const nextBtn = $("delivered-list-next");
+  const totalPages = statsModalPageCount();
+  statsModalPage = Math.min(Math.max(1, statsModalPage), totalPages);
+  const start = (statsModalPage - 1) * STATS_MODAL_PAGE_SIZE;
+  const pageOrders = statsModalOrders.slice(start, start + STATS_MODAL_PAGE_SIZE);
+  const timeKind = statsModalTimeKind;
+
   if (listEl) {
-    listEl.innerHTML = orders
+    listEl.innerHTML = pageOrders
       .map((o) => {
         const name = formatCustomerName(o.customer) || "Khách";
         const receiver = [name, (o.phone || "").trim()].filter(Boolean).join(" · ");
@@ -485,7 +630,14 @@ function openDeliveredListModal() {
         const when = [village, deliveryDateLabel(o.delivery_date || ""), slotLabel(slot)]
           .filter(Boolean)
           .join(" · ");
-        const deliveredAt = formatVnDateTime(o.delivered_at) || "—";
+        const timeText =
+          timeKind === "received"
+            ? `Tạo ${formatVnDateTime(o.created_at) || "—"}`
+            : `Giao ${formatVnDateTime(o.delivered_at) || "—"}`;
+        const statusBit =
+          timeKind === "received"
+            ? ` · ${escapeHtml(statusLabel(normalizeStatus(o.status)))}`
+            : "";
         const items = (o.items || [])
           .map((i) => {
             const sz = sizeLabel(i.size);
@@ -497,19 +649,27 @@ function openDeliveredListModal() {
             <strong>${escapeHtml(receiver)}</strong>
             <span class="delivered-list-total">${vnd.format(o.total)}</span>
           </header>
-          <p class="delivered-list-when">${when ? escapeHtml(when) : "—"} · Giao ${escapeHtml(deliveredAt)}</p>
+          <p class="delivered-list-when">${when ? escapeHtml(when) : "—"} · ${escapeHtml(timeText)}${statusBit}</p>
           <p class="delivered-list-items">${escapeHtml(items || "Chưa có món")}</p>
         </article>`;
       })
       .join("");
+    listEl.scrollTop = 0;
   }
-  document.body.classList.add("confirm-open");
-  deliveredListModal?.classList.remove("hidden");
-  deliveredListModal?.setAttribute("aria-hidden", "false");
-  lockBody(true);
-  requestAnimationFrame(() =>
-    deliveredListModal?.querySelector("[data-close-delivered-list]")?.focus(),
-  );
+
+  const showPager = statsModalOrders.length > STATS_MODAL_PAGE_SIZE;
+  pager?.classList.toggle("hidden", !showPager);
+  if (pageEl) {
+    const from = start + 1;
+    const to = start + pageOrders.length;
+    pageEl.textContent = `${statsModalPage} / ${totalPages} · ${from}–${to}`;
+  }
+  if (prevBtn instanceof HTMLButtonElement) {
+    prevBtn.disabled = statsModalPage <= 1;
+  }
+  if (nextBtn instanceof HTMLButtonElement) {
+    nextBtn.disabled = statsModalPage >= totalPages;
+  }
 }
 
 function closeDeliveredListModal() {
@@ -517,6 +677,8 @@ function closeDeliveredListModal() {
   deliveredListModal?.setAttribute("aria-hidden", "true");
   document.body.classList.remove("confirm-open");
   lockBody(false);
+  statsModalOrders = [];
+  statsModalPage = 1;
 }
 
 function getQty(id) {
@@ -541,7 +703,8 @@ function anyModalOpen() {
     !printConfirmModal?.classList.contains("hidden") ||
     !deliverConfirmModal?.classList.contains("hidden") ||
     !prepareModal?.classList.contains("hidden") ||
-    !deliveredListModal?.classList.contains("hidden")
+    !deliveredListModal?.classList.contains("hidden") ||
+    !statsDateModal?.classList.contains("hidden")
   );
 }
 
@@ -2549,9 +2712,11 @@ function syncStatsRangeButtons() {
   document.querySelectorAll("[data-stats-range]").forEach((btn) => {
     btn.classList.toggle(
       "active",
-      btn.getAttribute("data-stats-range") === statsRange,
+      statsRange !== "custom" &&
+        btn.getAttribute("data-stats-range") === statsRange,
     );
   });
+  $("stats-open-calendar")?.classList.toggle("active", statsRange === "custom");
 }
 
 function statsLoadingHtml() {
@@ -2561,11 +2726,18 @@ function statsLoadingHtml() {
   </div>`;
 }
 
+function statsApiUrl() {
+  if (statsRange === "custom" && statsCustomFrom && statsCustomTo) {
+    return `/api/stats?from=${encodeURIComponent(statsCustomFrom)}&to=${encodeURIComponent(statsCustomTo)}`;
+  }
+  return `/api/stats?range=${encodeURIComponent(statsRange)}`;
+}
+
 async function loadStats() {
   const root = $("stats");
   if (root) root.innerHTML = statsLoadingHtml();
   syncStatsRangeButtons();
-  const data = await api(`/api/stats?range=${encodeURIComponent(statsRange)}`);
+  const data = await api(statsApiUrl());
   statsPayload = data || null;
   renderStats();
 }
@@ -2573,16 +2745,224 @@ async function loadStats() {
 function setStatsRange(next) {
   if (!STATS_RANGE_LABEL[next]) return;
   statsRange = next;
-  document.querySelectorAll("[data-stats-range]").forEach((btn) => {
-    btn.classList.toggle(
-      "active",
-      btn.getAttribute("data-stats-range") === next,
-    );
-  });
+  statsCustomFrom = null;
+  statsCustomTo = null;
+  syncStatsRangeButtons();
   loadStats().catch(() => {
     const root = $("stats");
     if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
   });
+}
+
+function setStatsCustomRange(from, to) {
+  if (!from || !to) return;
+  const a = from <= to ? from : to;
+  const b = from <= to ? to : from;
+  statsRange = "custom";
+  statsCustomFrom = a;
+  statsCustomTo = b;
+  syncStatsRangeButtons();
+  closeStatsDateModal();
+  loadStats().catch(() => {
+    const root = $("stats");
+    if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
+  });
+}
+
+function monthStartYmd(ymd) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})/);
+  if (!m) return vnYmd();
+  return `${m[1]}-${m[2]}-01`;
+}
+
+function addMonthsYmd(ymd, delta) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})/);
+  if (!m) return vnYmd();
+  let y = Number(m[1]);
+  let mo = Number(m[2]) - 1 + delta;
+  while (mo < 0) {
+    mo += 12;
+    y -= 1;
+  }
+  while (mo > 11) {
+    mo -= 12;
+    y += 1;
+  }
+  return `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+}
+
+function monthLength(ymd) {
+  const start = monthStartYmd(ymd);
+  const next = addMonthsYmd(start, 1);
+  return Math.round(
+    (Date.parse(`${next}T12:00:00+07:00`) - Date.parse(`${start}T12:00:00+07:00`)) /
+      DAY_MS,
+  );
+}
+
+function openStatsDateModal() {
+  const today = vnYmd();
+  statsDateMode =
+    statsRange === "custom" &&
+    statsCustomFrom &&
+    statsCustomTo &&
+    statsCustomFrom !== statsCustomTo
+      ? "range"
+      : "day";
+  if (statsRange === "custom" && statsCustomFrom) {
+    statsPickFrom = statsCustomFrom;
+    statsPickTo = statsCustomTo || statsCustomFrom;
+    statsCalMonthYmd = monthStartYmd(statsCustomFrom);
+  } else {
+    statsPickFrom = today;
+    statsPickTo = today;
+    statsCalMonthYmd = monthStartYmd(today);
+  }
+  paintStatsDateModal();
+  document.body.classList.add("confirm-open");
+  statsDateModal?.classList.remove("hidden");
+  statsDateModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() =>
+    statsDateModal?.querySelector("[data-close-stats-date]")?.focus(),
+  );
+}
+
+function closeStatsDateModal() {
+  statsDateModal?.classList.add("hidden");
+  statsDateModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
+}
+
+function paintStatsDateModal() {
+  document.querySelectorAll("[data-stats-date-mode]").forEach((btn) => {
+    btn.classList.toggle(
+      "active",
+      btn.getAttribute("data-stats-date-mode") === statsDateMode,
+    );
+  });
+  const monthEl = $("stats-cal-month");
+  const m = String(statsCalMonthYmd || "").match(/^(\d{4})-(\d{2})/);
+  if (monthEl && m) {
+    monthEl.textContent = `Tháng ${Number(m[2])} năm ${m[1]}`;
+  }
+  paintStatsCalGrid();
+  paintStatsCalSummary();
+  const applyBtn = $("stats-cal-apply");
+  if (applyBtn instanceof HTMLButtonElement) {
+    applyBtn.disabled = !statsPickFrom;
+  }
+}
+
+function paintStatsCalSummary() {
+  const el = $("stats-cal-summary");
+  if (!el) return;
+  if (!statsPickFrom) {
+    el.textContent =
+      statsDateMode === "range" ? "Chọn ngày bắt đầu" : "Chọn một ngày";
+    return;
+  }
+  if (statsDateMode === "range" && !statsPickTo) {
+    el.textContent = `Từ ${formatYmdVn(statsPickFrom)} · chọn ngày kết thúc`;
+    return;
+  }
+  if (statsDateMode === "day" || !statsPickTo || statsPickFrom === statsPickTo) {
+    el.textContent = formatYmdVn(statsPickFrom);
+    return;
+  }
+  const a = statsPickFrom <= statsPickTo ? statsPickFrom : statsPickTo;
+  const b = statsPickFrom <= statsPickTo ? statsPickTo : statsPickFrom;
+  el.textContent = `${formatYmdVn(a)} – ${formatYmdVn(b)}`;
+}
+
+function paintStatsCalGrid() {
+  const grid = $("stats-cal-grid");
+  if (!grid) return;
+  const today = vnYmd();
+  const minYmd = addDaysYmd(today, -365);
+  const monthStart = monthStartYmd(statsCalMonthYmd || today);
+  const len = monthLength(monthStart);
+  // Monday=0 … Sunday=6 for grid
+  const wdSun = vnWeekday(Date.parse(`${monthStart}T12:00:00+07:00`));
+  const lead = (wdSun + 6) % 7;
+  const cells = [];
+  for (let i = 0; i < lead; i++) {
+    const ymd = addDaysYmd(monthStart, i - lead);
+    cells.push({ ymd, other: true });
+  }
+  for (let d = 0; d < len; d++) {
+    cells.push({ ymd: addDaysYmd(monthStart, d), other: false });
+  }
+  while (cells.length % 7 !== 0) {
+    const last = cells[cells.length - 1].ymd;
+    cells.push({ ymd: addDaysYmd(last, 1), other: true });
+  }
+
+  let from = statsPickFrom;
+  let to = statsDateMode === "range" ? statsPickTo || statsPickFrom : statsPickFrom;
+  if (from && to && from > to) {
+    const tmp = from;
+    from = to;
+    to = tmp;
+  }
+
+  grid.innerHTML = cells
+    .map(({ ymd, other }) => {
+      const dayNum = Number(ymd.slice(8, 10));
+      const disabled = ymd > today || ymd < minYmd;
+      const isToday = ymd === today;
+      const isStart = from && ymd === from;
+      const isEnd = to && ymd === to;
+      const inRange =
+        statsDateMode === "range" && from && to && ymd >= from && ymd <= to;
+      const selected =
+        statsDateMode === "day" && from && ymd === from;
+      const cls = [
+        "stats-cal-day",
+        other ? "is-other" : "",
+        isToday ? "is-today" : "",
+        selected || (isStart && isEnd) ? "is-selected" : "",
+        inRange ? "is-in-range" : "",
+        isStart ? "is-range-start" : "",
+        isEnd ? "is-range-end" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `<button type="button" class="${cls}" data-cal-day="${ymd}" ${
+        disabled ? "disabled" : ""
+      } aria-label="${formatYmdVn(ymd)}">${dayNum}</button>`;
+    })
+    .join("");
+}
+
+function onStatsCalDayClick(ymd) {
+  if (!ymd) return;
+  if (statsDateMode === "day") {
+    statsPickFrom = ymd;
+    statsPickTo = ymd;
+  } else if (!statsPickFrom || (statsPickFrom && statsPickTo && statsPickFrom !== statsPickTo)) {
+    // start new range
+    statsPickFrom = ymd;
+    statsPickTo = "";
+  } else if (!statsPickTo) {
+    statsPickTo = ymd;
+  } else {
+    statsPickFrom = ymd;
+    statsPickTo = "";
+  }
+  paintStatsDateModal();
+}
+
+function applyStatsDatePicker() {
+  if (!statsPickFrom) {
+    toast("Chọn ngày trước");
+    return;
+  }
+  const from = statsPickFrom;
+  const to =
+    statsDateMode === "range" && statsPickTo ? statsPickTo : statsPickFrom;
+  setStatsCustomRange(from, to);
 }
 
 /** Show shell immediately; refresh data in background (never block paint on API) */
@@ -2660,9 +3040,55 @@ window.addEventListener("hashchange", () => {
 });
 
 document.querySelector(".stats-filters")?.addEventListener("click", (e) => {
+  const cal = e.target.closest("#stats-open-calendar");
+  if (cal) {
+    openStatsDateModal();
+    return;
+  }
   const btn = e.target.closest("[data-stats-range]");
   if (!btn) return;
   setStatsRange(btn.getAttribute("data-stats-range"));
+});
+
+statsDateModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (t.hasAttribute("data-close-stats-date") || t.closest("[data-close-stats-date]")) {
+    closeStatsDateModal();
+    return;
+  }
+  const modeBtn = t.closest("[data-stats-date-mode]");
+  if (modeBtn) {
+    const mode = modeBtn.getAttribute("data-stats-date-mode");
+    if (mode === "day" || mode === "range") {
+      statsDateMode = mode;
+      if (mode === "day" && statsPickFrom) statsPickTo = statsPickFrom;
+      paintStatsDateModal();
+    }
+    return;
+  }
+  if (t.closest("#stats-cal-prev")) {
+    statsCalMonthYmd = addMonthsYmd(statsCalMonthYmd || vnYmd(), -1);
+    paintStatsDateModal();
+    return;
+  }
+  if (t.closest("#stats-cal-next")) {
+    const next = addMonthsYmd(statsCalMonthYmd || vnYmd(), 1);
+    const todayMonth = monthStartYmd(vnYmd());
+    if (next <= todayMonth) {
+      statsCalMonthYmd = next;
+      paintStatsDateModal();
+    }
+    return;
+  }
+  if (t.closest("#stats-cal-apply")) {
+    applyStatsDatePicker();
+    return;
+  }
+  const dayBtn = t.closest("[data-cal-day]");
+  if (dayBtn && !dayBtn.hasAttribute("disabled")) {
+    onStatsCalDayClick(dayBtn.getAttribute("data-cal-day"));
+  }
 });
 
 document.querySelector("#tab-orders .order-filters")?.addEventListener("click", (e) => {
@@ -2795,6 +3221,20 @@ prepareModal?.addEventListener("click", (e) => {
 deliveredListModal?.addEventListener("click", (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
+  if (t.closest("#delivered-list-prev")) {
+    if (statsModalPage > 1) {
+      statsModalPage -= 1;
+      paintStatsOrdersModalPage();
+    }
+    return;
+  }
+  if (t.closest("#delivered-list-next")) {
+    if (statsModalPage < statsModalPageCount()) {
+      statsModalPage += 1;
+      paintStatsOrdersModalPage();
+    }
+    return;
+  }
   if (
     t.hasAttribute("data-close-delivered-list") ||
     t.closest("[data-close-delivered-list]")
@@ -2924,6 +3364,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!prepareModal?.classList.contains("hidden")) closePrepareSummary();
   else if (!deliveredListModal?.classList.contains("hidden")) closeDeliveredListModal();
+  else if (!statsDateModal?.classList.contains("hidden")) closeStatsDateModal();
   else if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
   else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();
   else if (!deleteOrderModal?.classList.contains("hidden")) closeDeleteOrderModal();
