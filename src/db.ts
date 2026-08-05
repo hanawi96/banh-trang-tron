@@ -44,6 +44,8 @@ async function runEnsureSchema(db: Client): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_delivered_at ON orders(delivered_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_status_delivered ON orders(status, delivered_at)`,
     ],
     "write",
   );
@@ -354,6 +356,16 @@ export function parseDateRangeKey(raw: string | undefined | null): DateRangeKey 
     raw === "upcoming" ||
     raw === "done"
   ) {
+    return raw;
+  }
+  return "today";
+}
+
+/** Stats UI ranges only — never upcoming/done */
+export type StatsRangeKey = "today" | "yesterday" | "7d" | "30d";
+
+export function parseStatsRangeKey(raw: string | undefined | null): StatsRangeKey {
+  if (raw === "yesterday" || raw === "7d" || raw === "30d" || raw === "today") {
     return raw;
   }
   return "today";

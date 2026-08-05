@@ -6,6 +6,7 @@ import {
   getDb,
   nowMs,
   parseDateRangeKey,
+  parseStatsRangeKey,
   applyOrdersStatus,
   parseDeliveryDate,
   parseOrderStatus,
@@ -14,6 +15,7 @@ import {
   todayRangeVn,
   upcomingDeliveryYmdRange,
   type OrderItem,
+  type OrderSize,
 } from "./db";
 import {
   applySoldDeltas,
@@ -196,13 +198,158 @@ app.delete("/api/products/:id", async (c) => {
   return c.json({ ok: true, id });
 });
 
+/** Aggregate stats by delivery-success day (delivered_at), VN calendar window */
+app.get("/api/stats", async (c) => {
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const rangeKey = parseStatsRangeKey(c.req.query("range"));
+  const { start, end } = rangeVn(rangeKey);
+
+  const [deliveredRes, receivedRes, openRes, products] = await Promise.all([
+    db.execute({
+      sql: `SELECT id, items_json, total, customer, phone, delivery_slot, delivery_date,
+                   delivered_at, printed_at, created_at
+            FROM orders
+            WHERE status = 'done'
+              AND COALESCE(delivered_at, printed_at, created_at) >= ?
+              AND COALESCE(delivered_at, printed_at, created_at) < ?
+            ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC`,
+      args: [start, end],
+    }),
+    db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM orders
+            WHERE created_at >= ? AND created_at < ?`,
+      args: [start, end],
+    }),
+    db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM orders
+            WHERE status IS NULL OR status = '' OR status = 'pending' OR status = 'printed'`,
+    }),
+    listProducts(db),
+  ]);
+
+  const productMap = new Map(products.map((p) => [p.id, p]));
+  const unitCost = (productId: string, size: OrderSize, price: number) => {
+    const catalog = productMap.get(productId);
+    if (!catalog) return Math.round(price * 0.55);
+    return size === "to"
+      ? Number(catalog.cost_large ?? catalog.cost) || 0
+      : Number(catalog.cost) || 0;
+  };
+  const sizeLabel = (size: OrderSize) => (size === "to" ? "To" : "Nhỏ");
+
+  let revenue = 0;
+  let profit = 0;
+  let countTrua = 0;
+  let countChieu = 0;
+  let countOther = 0;
+  let revTrua = 0;
+  let revChieu = 0;
+  let revOther = 0;
+  /** @type {Map<string, {name:string, qty:number, revenue:number}>} */
+  const byProduct = new Map<
+    string,
+    { name: string; qty: number; revenue: number }
+  >();
+
+  for (const row of deliveredRes.rows) {
+    const total = Number(row.total) || 0;
+    revenue += total;
+    const slot = row.delivery_slot ? String(row.delivery_slot) : "";
+    if (slot === "trua") {
+      countTrua += 1;
+      revTrua += total;
+    } else if (slot === "chieu") {
+      countChieu += 1;
+      revChieu += total;
+    } else {
+      countOther += 1;
+      revOther += total;
+    }
+
+    let items: OrderItem[] = [];
+    try {
+      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
+    } catch {
+      items = [];
+    }
+    for (const item of items) {
+      const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
+      if (qty < 1) continue;
+      const price = Number(item.price) || 0;
+      const size: OrderSize = item.size === "to" ? "to" : "nho";
+      const cost = unitCost(String(item.id || ""), size, price);
+      profit += qty * (price - cost);
+      const key = `${item.id || item.name}:${size}`;
+      const prev = byProduct.get(key) || {
+        name: `${String(item.name || "Món").trim() || "Món"} (${sizeLabel(size)})`,
+        qty: 0,
+        revenue: 0,
+      };
+      prev.qty += qty;
+      prev.revenue += qty * price;
+      byProduct.set(key, prev);
+    }
+  }
+
+  const topProducts = [...byProduct.values()]
+    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
+    .slice(0, 5);
+
+  const deliveredOrders = deliveredRes.rows.map((row) => {
+    let items: OrderItem[] = [];
+    try {
+      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
+    } catch {
+      items = [];
+    }
+    return {
+      id: String(row.id),
+      customer: row.customer ? String(row.customer) : "",
+      phone: row.phone ? String(row.phone) : "",
+      total: Number(row.total) || 0,
+      delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
+      delivery_date: row.delivery_date ? String(row.delivery_date) : "",
+      delivered_at: parseTs(
+        row.delivered_at ?? row.printed_at ?? row.created_at,
+      ),
+      items: items.map((i) => ({
+        name: String(i.name || "Món"),
+        qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+        size: i.size === "to" ? "to" : "nho",
+      })),
+    };
+  });
+
+  const deliveredCount = deliveredOrders.length;
+  const receivedCount = Number(receivedRes.rows[0]?.cnt || 0);
+  const openCount = Number(openRes.rows[0]?.cnt || 0);
+
+  return c.json({
+    range: rangeKey,
+    tz: "Asia/Ho_Chi_Minh",
+    revenue,
+    profit,
+    deliveredCount,
+    receivedCount,
+    openCount,
+    bySlot: {
+      trua: { count: countTrua, revenue: revTrua },
+      chieu: { count: countChieu, revenue: revChieu },
+      other: { count: countOther, revenue: revOther },
+    },
+    topProducts,
+    deliveredOrders,
+  });
+});
+
 app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
   // `upcoming` = home board by delivery day (yesterday → last picker day).
   // `done` = mọi đơn đã giao (mới giao trước).
-  // Stats ranges (today/yesterday/7d/30d) = by created_at (orders taken that day).
+  // today/yesterday/7d/30d = by created_at (legacy list; stats uses /api/stats).
   const limit =
     rangeKey === "today" ||
     rangeKey === "yesterday" ||

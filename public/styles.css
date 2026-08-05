@@ -329,7 +329,8 @@ html.booting .tabbar {
 
 #print-confirm-modal,
 #deliver-confirm-modal,
-#prepare-modal {
+#prepare-modal,
+#delivered-list-modal {
   place-items: center;
   padding: 24px;
   z-index: 70;
@@ -1721,10 +1722,26 @@ body.bulk-open .tabbar {
   gap: 8px;
 }
 
+.stats-grid-mgmt .stats-card {
+  text-align: center;
+  padding: 10px 8px;
+}
+
+.stats-grid-mgmt .stats-card strong {
+  font-size: 1.35rem;
+}
+
 .stats-slot-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.stats-slot-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--muted);
 }
 
 .stats-card {
@@ -1751,16 +1768,69 @@ body.bulk-open .tabbar {
 
 .stats-card small {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .stats-card-lg strong {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.stats-card-revenue {
+  background: linear-gradient(165deg, #0c7a52 0%, #0a5f40 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(12, 122, 82, 0.22);
+}
+
+.stats-card-revenue span,
+.stats-card-revenue small {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.stats-card-revenue strong {
+  color: #fff;
+  font-size: 1.25rem;
 }
 
 .stats-card-accent {
   background: linear-gradient(180deg, #e8f7ef 0%, #fff 70%);
   border-color: #c6e6d4;
+}
+
+.stats-card-done {
+  background: #f3fbf7;
+  border-color: rgba(12, 122, 82, 0.18);
+}
+
+.stats-card-btn {
+  width: 100%;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.stats-card-btn:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.stats-card-btn:not(:disabled):hover {
+  box-shadow: 0 6px 18px rgba(12, 122, 82, 0.12);
+}
+
+.stats-card-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.stats-card-open {
+  background: #fff8ef;
+  border-color: rgba(154, 77, 0, 0.16);
 }
 
 .stats-card .ok {
@@ -1821,6 +1891,17 @@ body.bulk-open .tabbar {
 .stats-rank-info span {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+@media (max-width: 380px) {
+  .stats-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-card-lg strong,
+  .stats-card-revenue strong {
+    font-size: 1.35rem;
+  }
 }
 
 .tab.active {
@@ -2052,6 +2133,90 @@ body.bulk-open .tabbar {
   border-radius: 14px;
   min-height: 46px;
   font-weight: 800;
+}
+
+.modal-sheet.modal-sheet-delivered {
+  width: min(100%, 440px);
+  max-height: min(88dvh, 720px);
+  margin: 0 auto;
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(12, 122, 82, 0.14);
+  padding: 18px 18px calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f7fcf9 0%, #fff 40%, #fff 100%);
+  border: 1px solid rgba(12, 122, 82, 0.1);
+}
+
+.delivered-list-meta {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.delivered-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.delivered-list-item {
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(211, 224, 217, 0.9);
+  display: grid;
+  gap: 4px;
+}
+
+.delivered-list-item header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.delivered-list-item header strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.delivered-list-total {
+  flex-shrink: 0;
+  font-weight: 800;
+  color: var(--accent-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.delivered-list-when {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.delivered-list-items {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.modal-sheet-delivered .btn.primary {
+  margin-top: 2px;
+  border-radius: 14px;
+  min-height: 46px;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 
 /* Must follow .modal-sheet so shorthand padding does not win */

@@ -502,6 +502,31 @@
       </div>
     </div>
 
+    <div id="delivered-list-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-delivered-list></div>
+      <div
+        class="modal-sheet modal-sheet-delivered"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delivered-list-title"
+      >
+        <header class="prepare-head">
+          <div>
+            <p class="prepare-kicker">Thống kê</p>
+            <h2 id="delivered-list-title">Đơn đã giao</h2>
+          </div>
+          <button type="button" class="icon-btn" data-close-delivered-list aria-label="Đóng">
+            Đóng
+          </button>
+        </header>
+        <p class="delivered-list-meta" id="delivered-list-meta"></p>
+        <div class="delivered-list" id="delivered-list"></div>
+        <button type="button" class="btn primary full" data-close-delivered-list>
+          Đóng
+        </button>
+      </div>
+    </div>
+
     <div id="prepare-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-prepare></div>
       <div

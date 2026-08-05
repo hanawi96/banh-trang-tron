@@ -11,6 +11,7 @@ const deleteOrderModal = $("delete-order-modal");
 const printConfirmModal = $("print-confirm-modal");
 const deliverConfirmModal = $("deliver-confirm-modal");
 const prepareModal = $("prepare-modal");
+const deliveredListModal = $("delivered-list-modal");
 const toastEl = $("toast");
 const viewTitle = $("view-title");
 const ordersBadge = $("orders-badge");
@@ -42,7 +43,7 @@ let ordersCache = [];
 let doneOrdersCache = [];
 let doneOrdersLoadPromise = null;
 /** @type {Array<any>} */
-let statsOrders = [];
+let statsPayload = null;
 /** @type {'today'|'yesterday'|'7d'|'30d'} */
 let statsRange = "today";
 /** @type {'pending'|'done'|'all'} — pending filter = chưa giao (pending|printed) */
@@ -327,156 +328,169 @@ function productUnitCost(product, size) {
     : Number(product.cost) || 0;
 }
 
-function computeStats(list) {
-  const productMap = new Map(products.map((p) => [p.id, p]));
-  let revenue = 0;
-  let revenueDone = 0;
-  let profit = 0;
-  let profitDone = 0;
-  let pending = 0;
-  let done = 0;
-  let revTrua = 0;
-  let revChieu = 0;
-  let countTrua = 0;
-  let countChieu = 0;
-  /** @type {Map<string, {name:string, qty:number, revenue:number}>} */
-  const byProduct = new Map();
-
-  for (const o of list) {
-    const status = normalizeStatus(o.status);
-    const total = Number(o.total) || 0;
-    revenue += total;
-    if (status === "done") {
-      done += 1;
-      revenueDone += total;
-    } else {
-      pending += 1;
-    }
-    if (o.delivery_slot === "trua") {
-      revTrua += total;
-      countTrua += 1;
-    } else if (o.delivery_slot === "chieu") {
-      revChieu += total;
-      countChieu += 1;
-    }
-
-    for (const item of o.items || []) {
-      const qty = Number(item.qty) || 0;
-      const price = Number(item.price) || 0;
-      const size = normalizeSize(item.size);
-      const catalog = productMap.get(item.id);
-      const cost = catalog
-        ? productUnitCost(catalog, size)
-        : Math.round(price * 0.55);
-      const lineRev = qty * price;
-      const lineProfit = qty * (price - cost);
-      profit += lineProfit;
-      if (status === "done") profitDone += lineProfit;
-      const key = `${item.id}:${size}`;
-      const prev = byProduct.get(key) || {
-        name: `${item.name} (${sizeLabel(size)})`,
-        qty: 0,
-        revenue: 0,
-      };
-      prev.qty += qty;
-      prev.revenue += lineRev;
-      byProduct.set(key, prev);
-    }
-  }
-
-  const topProducts = [...byProduct.values()]
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 5);
-
-  return {
-    totalOrders: list.length,
-    pending,
-    done,
-    revenue,
-    revenueDone,
-    profit,
-    profitDone,
-    revTrua,
-    revChieu,
-    countTrua,
-    countChieu,
-    topProducts,
-  };
-}
-
 function renderStats() {
   const root = $("stats");
   if (!root) return;
   const label = STATS_RANGE_LABEL[statsRange] || "Hôm nay";
-  const s = computeStats(statsOrders);
-  if (!s.totalOrders) {
-    root.innerHTML = `<p class="empty">Chưa có đơn trong khoảng “${escapeHtml(label)}”.</p>`;
+  const s = statsPayload;
+  if (!s) {
+    root.innerHTML = `<p class="empty">Chưa có dữ liệu thống kê.</p>`;
     return;
   }
 
-  const topHtml = s.topProducts.length
-    ? s.topProducts
+  const deliveredCount = Number(s.deliveredCount) || 0;
+  const revenue = Number(s.revenue) || 0;
+  const profit = Number(s.profit) || 0;
+  const receivedCount = Number(s.receivedCount) || 0;
+  const openCount = Number(s.openCount) || 0;
+  const bySlot = s.bySlot || {};
+  const trua = bySlot.trua || { count: 0, revenue: 0 };
+  const chieu = bySlot.chieu || { count: 0, revenue: 0 };
+  const other = bySlot.other || { count: 0, revenue: 0 };
+  const topProducts = Array.isArray(s.topProducts) ? s.topProducts : [];
+
+  if (!deliveredCount && !receivedCount && !openCount) {
+    root.innerHTML = `
+      <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao thành công · giờ VN</p>
+      <p class="empty">Chưa có đơn đã giao trong khoảng “${escapeHtml(label)}”.</p>`;
+    return;
+  }
+
+  const topHtml = topProducts.length
+    ? topProducts
         .map(
           (p, i) => `
         <div class="stats-rank-row">
           <span class="stats-rank">#${i + 1}</span>
           <div class="stats-rank-info">
             <strong>${escapeHtml(p.name)}</strong>
-            <span>${p.qty} phần · ${vnd.format(p.revenue)}</span>
+            <span>${p.qty} suất · ${vnd.format(p.revenue)}</span>
           </div>
         </div>`,
         )
         .join("")
-    : `<p class="empty">Chưa có dữ liệu món.</p>`;
+    : deliveredCount
+      ? `<p class="empty">Chưa có dữ liệu món.</p>`
+      : `<p class="empty">Chưa có đơn đã giao để thống kê món.</p>`;
+
+  const otherNote =
+    Number(other.count) > 0
+      ? `<p class="stats-slot-note">${other.count} đơn không gán ca · ${vnd.format(other.revenue)}</p>`
+      : "";
 
   root.innerHTML = `
-    <p class="stats-kicker">${escapeHtml(label)} · theo ngày nhận đơn · giờ VN</p>
+    <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao thành công · giờ VN</p>
     <div class="stats-hero">
-      <article class="stats-card stats-card-lg">
-        <span>Doanh thu</span>
-        <strong>${vnd.format(s.revenue)}</strong>
-        <small>Đã giao: ${vnd.format(s.revenueDone)}</small>
+      <article class="stats-card stats-card-lg stats-card-revenue">
+        <span>Doanh thu đã giao</span>
+        <strong>${vnd.format(revenue)}</strong>
       </article>
       <article class="stats-card stats-card-lg stats-card-accent">
         <span>Lãi ước tính</span>
-        <strong>${vnd.format(s.profit)}</strong>
-        <small>Đã giao: ${vnd.format(s.profitDone)}</small>
+        <strong>${vnd.format(profit)}</strong>
       </article>
     </div>
-    <div class="stats-grid">
-      <article class="stats-card">
-        <span>Tổng đơn</span>
-        <strong>${s.totalOrders}</strong>
-      </article>
-      <article class="stats-card">
+    <div class="stats-grid stats-grid-mgmt">
+      <button type="button" class="stats-card stats-card-done stats-card-btn"${
+        deliveredCount > 0 ? ` id="stats-open-delivered"` : " disabled"
+      }>
         <span>Đã giao</span>
-        <strong class="ok">${s.done}</strong>
-      </article>
+        <strong class="ok">${deliveredCount}</strong>
+        <small>${deliveredCount > 0 ? "bấm để xem" : "trong kỳ"}</small>
+      </button>
       <article class="stats-card">
+        <span>Nhận đơn</span>
+        <strong>${receivedCount}</strong>
+        <small>trong kỳ</small>
+      </article>
+      <article class="stats-card stats-card-open">
         <span>Chưa giao</span>
-        <strong class="warn">${s.pending}</strong>
+        <strong class="warn">${openCount}</strong>
+        <small>đang còn</small>
       </article>
     </div>
     <div class="stats-section">
-      <h3>Theo ca giao</h3>
+      <h3>Theo ca đã giao</h3>
       <div class="stats-slot-grid">
         <article class="stats-card">
           <span>Giao trưa</span>
-          <strong>${vnd.format(s.revTrua)}</strong>
-          <small>${s.countTrua} đơn</small>
+          <strong>${vnd.format(trua.revenue || 0)}</strong>
+          <small>${trua.count || 0} đơn</small>
         </article>
         <article class="stats-card">
           <span>Giao chiều</span>
-          <strong>${vnd.format(s.revChieu)}</strong>
-          <small>${s.countChieu} đơn</small>
+          <strong>${vnd.format(chieu.revenue || 0)}</strong>
+          <small>${chieu.count || 0} đơn</small>
         </article>
       </div>
+      ${otherNote}
     </div>
     <div class="stats-section">
-      <h3>Món bán chạy</h3>
+      <h3>Món đã bán</h3>
       <div class="stats-rank-list">${topHtml}</div>
     </div>
   `;
+  $("stats-open-delivered")?.addEventListener("click", () => {
+    openDeliveredListModal();
+  });
+}
+
+function openDeliveredListModal() {
+  const s = statsPayload;
+  const orders = Array.isArray(s?.deliveredOrders) ? s.deliveredOrders : [];
+  if (!orders.length) {
+    toast("Chưa có đơn đã giao trong kỳ này");
+    return;
+  }
+  const label = STATS_RANGE_LABEL[statsRange] || "Hôm nay";
+  const title = $("delivered-list-title");
+  const meta = $("delivered-list-meta");
+  const listEl = $("delivered-list");
+  if (title) title.textContent = `Đã giao · ${orders.length} đơn`;
+  if (meta) {
+    meta.textContent = `${label} · theo giờ giao thành công (VN)`;
+  }
+  if (listEl) {
+    listEl.innerHTML = orders
+      .map((o) => {
+        const name = formatCustomerName(o.customer) || "Khách";
+        const receiver = [name, (o.phone || "").trim()].filter(Boolean).join(" · ");
+        const slot = o.delivery_slot === "chieu" ? "chieu" : o.delivery_slot === "trua" ? "trua" : "";
+        const when = [deliveryDateLabel(o.delivery_date || ""), slotLabel(slot)]
+          .filter(Boolean)
+          .join(" · ");
+        const deliveredAt = formatVnDateTime(o.delivered_at) || "—";
+        const items = (o.items || [])
+          .map((i) => {
+            const sz = sizeLabel(i.size);
+            return `${i.qty}× ${i.name}${sz ? ` (${sz})` : ""}`;
+          })
+          .join(", ");
+        return `<article class="delivered-list-item">
+          <header>
+            <strong>${escapeHtml(receiver)}</strong>
+            <span class="delivered-list-total">${vnd.format(o.total)}</span>
+          </header>
+          <p class="delivered-list-when">${when ? escapeHtml(when) : "—"} · Giao ${escapeHtml(deliveredAt)}</p>
+          <p class="delivered-list-items">${escapeHtml(items || "Chưa có món")}</p>
+        </article>`;
+      })
+      .join("");
+  }
+  document.body.classList.add("confirm-open");
+  deliveredListModal?.classList.remove("hidden");
+  deliveredListModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() =>
+    deliveredListModal?.querySelector("[data-close-delivered-list]")?.focus(),
+  );
+}
+
+function closeDeliveredListModal() {
+  deliveredListModal?.classList.add("hidden");
+  deliveredListModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
 }
 
 function getQty(id) {
@@ -500,7 +514,8 @@ function anyModalOpen() {
     !deleteOrderModal.classList.contains("hidden") ||
     !printConfirmModal?.classList.contains("hidden") ||
     !deliverConfirmModal?.classList.contains("hidden") ||
-    !prepareModal?.classList.contains("hidden")
+    !prepareModal?.classList.contains("hidden") ||
+    !deliveredListModal?.classList.contains("hidden")
   );
 }
 
@@ -1775,6 +1790,9 @@ async function setOrderStatus(id, status, opts = {}) {
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
   } catch (err) {
     prev.status = snap.status;
     prev.printed_at = snap.printed_at;
@@ -1813,7 +1831,6 @@ function removeOrdersFromCaches(ids) {
   const drop = new Set(ids);
   ordersCache = ordersCache.filter((o) => !drop.has(o.id));
   doneOrdersCache = doneOrdersCache.filter((o) => !drop.has(o.id));
-  statsOrders = statsOrders.filter((o) => !drop.has(o.id));
   for (const id of drop) selectedOrderIds.delete(id);
 }
 
@@ -1822,10 +1839,8 @@ async function deleteOrders(ids) {
   if (!unique.length) return;
   const snapshot = ordersCache.slice();
   const doneSnapshot = doneOrdersCache.slice();
-  const statsSnapshot = statsOrders.slice();
   removeOrdersFromCaches(unique);
   paintOrdersBoard();
-  if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
 
   try {
     if (unique.length === 1) {
@@ -1838,12 +1853,13 @@ async function deleteOrders(ids) {
     }
     toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
     loadProducts().catch(() => {});
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
   } catch (err) {
     ordersCache = snapshot;
     doneOrdersCache = doneSnapshot;
-    statsOrders = statsSnapshot;
     paintOrdersBoard();
-    if (!$("tab-stats")?.classList.contains("hidden")) renderStats();
     toast(err.message || "Không xóa được");
   }
 }
@@ -1905,6 +1921,9 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       if (next === "done") toast(`Đã giao ${targets.length} đơn`);
       else if (next === "printed") toast(`Đã in ${targets.length} đơn`);
       else toast("Đã hoàn tác");
+    }
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
     }
   } catch (err) {
     for (const s of snapshot) {
@@ -2419,8 +2438,8 @@ async function loadStats() {
   const root = $("stats");
   if (root) root.innerHTML = statsLoadingHtml();
   syncStatsRangeButtons();
-  const data = await api(`/api/orders?range=${encodeURIComponent(statsRange)}`);
-  statsOrders = data.orders || [];
+  const data = await api(`/api/stats?range=${encodeURIComponent(statsRange)}`);
+  statsPayload = data || null;
   renderStats();
 }
 
@@ -2641,6 +2660,17 @@ prepareModal?.addEventListener("click", (e) => {
   }
 });
 
+deliveredListModal?.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (
+    t.hasAttribute("data-close-delivered-list") ||
+    t.closest("[data-close-delivered-list]")
+  ) {
+    closeDeliveredListModal();
+  }
+});
+
 $("bulk-delete")?.addEventListener("click", () => {
   const ids = [...selectedOrderIds];
   if (!ids.length) return;
@@ -2761,6 +2791,7 @@ deleteModal.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!prepareModal?.classList.contains("hidden")) closePrepareSummary();
+  else if (!deliveredListModal?.classList.contains("hidden")) closeDeliveredListModal();
   else if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
   else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();
   else if (!deleteOrderModal?.classList.contains("hidden")) closeDeleteOrderModal();
