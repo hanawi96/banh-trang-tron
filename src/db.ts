@@ -47,10 +47,10 @@ async function runEnsureSchema(db: Client): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_delivered_at ON orders(delivered_at)`,
       `CREATE INDEX IF NOT EXISTS idx_orders_status_delivered ON orders(status, delivered_at)`,
-      `CREATE INDEX IF NOT EXISTS idx_orders_village ON orders(village)`,
     ],
     "write",
   );
+  // Existing DBs may lack newer columns — add before any index that depends on them
   for (const col of [
     "phone TEXT",
     "delivery_slot TEXT",
@@ -65,6 +65,13 @@ async function runEnsureSchema(db: Client): Promise<void> {
     } catch {
       // column already exists
     }
+  }
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_orders_village ON orders(village)`,
+    );
+  } catch {
+    // ignore
   }
   schemaReady = true;
 }
