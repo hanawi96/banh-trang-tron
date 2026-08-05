@@ -222,11 +222,8 @@ app.get("/api/stats", async (c) => {
       args: [start, end],
     }),
     db.execute({
-      sql: `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
-                   status, delivered_at, printed_at, created_at
-            FROM orders
-            WHERE created_at >= ? AND created_at < ?
-            ORDER BY created_at DESC`,
+      sql: `SELECT COUNT(*) AS cnt FROM orders
+            WHERE created_at >= ? AND created_at < ?`,
       args: [start, end],
     }),
     db.execute({
@@ -359,58 +356,8 @@ app.get("/api/stats", async (c) => {
       image: p.image,
     }));
 
-  const deliveredOrders = deliveredRes.rows.map((row) => {
-    let items: OrderItem[] = [];
-    try {
-      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
-    } catch {
-      items = [];
-    }
-    return {
-      id: String(row.id),
-      customer: row.customer ? String(row.customer) : "",
-      phone: row.phone ? String(row.phone) : "",
-      village: row.village ? String(row.village) : "",
-      total: Number(row.total) || 0,
-      delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
-      delivery_date: row.delivery_date ? String(row.delivery_date) : "",
-      delivered_at: parseTs(
-        row.delivered_at ?? row.printed_at ?? row.created_at,
-      ),
-      items: items.map((i) => ({
-        name: String(i.name || "Món"),
-        qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
-        size: i.size === "to" ? "to" : "nho",
-      })),
-    };
-  });
-
-  const deliveredCount = deliveredOrders.length;
-  const receivedOrders = receivedRes.rows.map((row) => {
-    let items: OrderItem[] = [];
-    try {
-      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
-    } catch {
-      items = [];
-    }
-    return {
-      id: String(row.id),
-      customer: row.customer ? String(row.customer) : "",
-      phone: row.phone ? String(row.phone) : "",
-      village: row.village ? String(row.village) : "",
-      total: Number(row.total) || 0,
-      status: parseOrderStatus(row.status),
-      delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
-      delivery_date: row.delivery_date ? String(row.delivery_date) : "",
-      created_at: parseTs(row.created_at),
-      items: items.map((i) => ({
-        name: String(i.name || "Món"),
-        qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
-        size: i.size === "to" ? "to" : "nho",
-      })),
-    };
-  });
-  const receivedCount = receivedOrders.length;
+  const deliveredCount = deliveredRes.rows.length;
+  const receivedCount = Number(receivedRes.rows[0]?.cnt || 0);
   const openCount = Number(openRes.rows[0]?.cnt || 0);
 
   return c.json({
@@ -430,8 +377,128 @@ app.get("/api/stats", async (c) => {
     },
     byVillage,
     topProducts,
-    deliveredOrders,
-    receivedOrders,
+  });
+});
+
+/** Paginated order lists for stats modals — keep /api/stats payload small */
+app.get("/api/stats/orders", async (c) => {
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const custom = ymdRangeToUnix(c.req.query("from"), c.req.query("to"));
+  const rangeKey = parseStatsRangeKey(c.req.query("range"));
+  const { start, end } = custom ?? rangeVn(rangeKey);
+  const kind = c.req.query("kind") === "received" ? "received" : "delivered";
+  const villageRaw = String(c.req.query("village") || "").trim();
+  const page = Math.max(1, Math.floor(Number(c.req.query("page")) || 1));
+  const limit = Math.min(
+    20,
+    Math.max(1, Math.floor(Number(c.req.query("limit")) || 20)),
+  );
+  const offset = (page - 1) * limit;
+
+  const villageFilter = villageRaw
+    ? villageRaw === "Chưa chọn thôn"
+      ? "unknown"
+      : parseVillage(villageRaw) || null
+    : null;
+  if (villageRaw && villageRaw !== "Chưa chọn thôn" && !villageFilter) {
+    return c.json({ error: "Thôn không hợp lệ" }, 400);
+  }
+
+  const villageClause =
+    villageFilter === "unknown"
+      ? `AND (village IS NULL OR village = '' OR village NOT IN (${VILLAGES.map(() => "?").join(",")}))`
+      : villageFilter
+        ? `AND village = ?`
+        : "";
+  const villageArgs =
+    villageFilter === "unknown"
+      ? [...VILLAGES]
+      : villageFilter
+        ? [villageFilter]
+        : [];
+
+  let countSql: string;
+  let listSql: string;
+  let baseArgs: (string | number)[];
+
+  if (kind === "received") {
+    countSql = `SELECT COUNT(*) AS cnt FROM orders
+                WHERE created_at >= ? AND created_at < ? ${villageClause}`;
+    listSql = `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
+                      status, created_at
+               FROM orders
+               WHERE created_at >= ? AND created_at < ? ${villageClause}
+               ORDER BY created_at DESC
+               LIMIT ? OFFSET ?`;
+    baseArgs = [start, end, ...villageArgs];
+  } else {
+    countSql = `SELECT COUNT(*) AS cnt FROM orders
+                WHERE status = 'done'
+                  AND COALESCE(delivered_at, printed_at, created_at) >= ?
+                  AND COALESCE(delivered_at, printed_at, created_at) < ?
+                  ${villageClause}`;
+    listSql = `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
+                      delivered_at, printed_at, created_at
+               FROM orders
+               WHERE status = 'done'
+                 AND COALESCE(delivered_at, printed_at, created_at) >= ?
+                 AND COALESCE(delivered_at, printed_at, created_at) < ?
+                 ${villageClause}
+               ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
+               LIMIT ? OFFSET ?`;
+    baseArgs = [start, end, ...villageArgs];
+  }
+
+  const [countRes, listRes] = await Promise.all([
+    db.execute({ sql: countSql, args: baseArgs }),
+    db.execute({ sql: listSql, args: [...baseArgs, limit, offset] }),
+  ]);
+
+  const total = Number(countRes.rows[0]?.cnt || 0);
+  const orders = listRes.rows.map((row) => {
+    let items: OrderItem[] = [];
+    try {
+      items = JSON.parse(String(row.items_json || "[]")) as OrderItem[];
+    } catch {
+      items = [];
+    }
+    const base = {
+      id: String(row.id),
+      customer: row.customer ? String(row.customer) : "",
+      phone: row.phone ? String(row.phone) : "",
+      village: row.village ? String(row.village) : "",
+      total: Number(row.total) || 0,
+      delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
+      delivery_date: row.delivery_date ? String(row.delivery_date) : "",
+      items: items.map((i) => ({
+        name: String(i.name || "Món"),
+        qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+        size: i.size === "to" ? "to" : "nho",
+      })),
+    };
+    if (kind === "received") {
+      return {
+        ...base,
+        status: parseOrderStatus(row.status),
+        created_at: parseTs(row.created_at),
+      };
+    }
+    return {
+      ...base,
+      delivered_at: parseTs(
+        row.delivered_at ?? row.printed_at ?? row.created_at,
+      ),
+    };
+  });
+
+  return c.json({
+    kind,
+    page,
+    limit,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    orders,
   });
 });
 

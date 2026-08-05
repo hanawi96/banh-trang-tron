@@ -29,6 +29,7 @@ const editOrderMenuEl = $("edit-order-menu");
 
 const PRODUCT_CACHE_KEY = "bt_products_v3";
 const ORDERS_CACHE_KEY = "bt_orders_board_v3";
+const STATS_CACHE_KEY = "bt_stats_v1";
 
 /** @type {Map<string, number>} */
 const qtyMap = new Map();
@@ -45,6 +46,22 @@ let doneOrdersCache = [];
 let doneOrdersLoadPromise = null;
 /** @type {Array<any>} */
 let statsPayload = null;
+/** Cache key of current statsPayload */
+let statsPayloadKey = "";
+const STATS_MODAL_PAGE_SIZE = 20;
+/** @type {any[]} */
+let statsModalOrders = [];
+/** @type {'delivered'|'received'} */
+let statsModalTimeKind = "delivered";
+let statsModalPage = 1;
+let statsModalTotal = 0;
+let statsModalTotalPages = 1;
+/** @type {{ kind: string, village: string, title: string, meta: string }|null} */
+let statsModalQuery = null;
+/** @type {Promise<void>|null} */
+let statsLoadPromise = null;
+/** Key currently being fetched by statsLoadPromise */
+let statsLoadingKey = "";
 /** @type {'today'|'yesterday'|'7d'|'30d'|'custom'} */
 let statsRange = "today";
 /** @type {string|null} YYYY-MM-DD */
@@ -244,6 +261,38 @@ function writeOrdersCache(list) {
     localStorage.setItem(
       ORDERS_CACHE_KEY,
       JSON.stringify({ day, orders: list }),
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function statsCacheKey() {
+  if (statsRange === "custom" && statsCustomFrom && statsCustomTo) {
+    return `custom:${statsCustomFrom}:${statsCustomTo}`;
+  }
+  return String(statsRange || "today");
+}
+
+function readStatsCache(key) {
+  try {
+    const raw = localStorage.getItem(STATS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.day !== vnDayKey() || data.key !== key || !data.payload) {
+      return null;
+    }
+    return data.payload;
+  } catch {
+    return null;
+  }
+}
+
+function writeStatsCache(key, payload) {
+  try {
+    localStorage.setItem(
+      STATS_CACHE_KEY,
+      JSON.stringify({ day: vnDayKey(), key, payload }),
     );
   } catch {
     /* quota / private mode */
@@ -524,77 +573,68 @@ function renderStats() {
 }
 
 function openDeliveredListModal() {
-  const s = statsPayload;
-  const orders = Array.isArray(s?.deliveredOrders) ? s.deliveredOrders : [];
-  if (!orders.length) {
-    toast("Chưa có đơn đã giao trong kỳ này");
-    return;
-  }
-  const label = statsPeriodLabel();
-  fillStatsOrdersModal({
-    title: `Đã giao · ${orders.length} đơn`,
-    meta: `${label} · theo giờ giao thành công (VN)`,
-    orders,
-    timeKind: "delivered",
+  openStatsOrdersModal({
+    kind: "delivered",
+    village: "",
+    title: "Đã giao",
+    meta: `${statsPeriodLabel()} · theo giờ giao thành công (VN)`,
   });
 }
 
 function openReceivedListModal() {
-  const s = statsPayload;
-  const orders = Array.isArray(s?.receivedOrders) ? s.receivedOrders : [];
-  if (!orders.length) {
-    toast("Chưa nhận đơn nào trong kỳ này");
-    return;
-  }
-  const label = statsPeriodLabel();
-  fillStatsOrdersModal({
-    title: `Nhận đơn · ${orders.length} đơn`,
-    meta: `${label} · theo giờ tạo đơn (VN)`,
-    orders,
-    timeKind: "received",
+  openStatsOrdersModal({
+    kind: "received",
+    village: "",
+    title: "Nhận đơn",
+    meta: `${statsPeriodLabel()} · theo giờ tạo đơn (VN)`,
   });
 }
 
 function openVillageOrdersModal(villageName) {
-  const s = statsPayload;
-  const all = Array.isArray(s?.deliveredOrders) ? s.deliveredOrders : [];
   const name = String(villageName || "").trim();
-  const unknown = name === "Chưa chọn thôn";
-  const orders = all.filter((o) => {
-    const v = parseVillage(o.village) || "";
-    if (unknown) return !v;
-    return v === name;
-  });
-  if (!orders.length) {
-    toast(unknown ? "Không có đơn chưa chọn thôn" : `Chưa có đơn ở ${name}`);
-    return;
-  }
-  const label = statsPeriodLabel();
-  fillStatsOrdersModal({
-    title: `${name} · ${orders.length} đơn`,
-    meta: `${label} · đã giao trong kỳ (VN)`,
-    orders,
-    timeKind: "delivered",
+  if (!name) return;
+  openStatsOrdersModal({
+    kind: "delivered",
+    village: name,
+    title: name,
+    meta: `${statsPeriodLabel()} · đã giao trong kỳ (VN)`,
   });
 }
 
-/** @param {{ title: string, meta: string, orders: any[], timeKind: 'delivered'|'received' }} opts */
-const STATS_MODAL_PAGE_SIZE = 20;
-/** @type {any[]} */
-let statsModalOrders = [];
-/** @type {'delivered'|'received'} */
-let statsModalTimeKind = "delivered";
-let statsModalPage = 1;
+function statsOrdersApiUrl(page) {
+  const q = statsModalQuery;
+  if (!q) return "";
+  const params = new URLSearchParams();
+  params.set("kind", q.kind === "received" ? "received" : "delivered");
+  params.set("page", String(page));
+  params.set("limit", String(STATS_MODAL_PAGE_SIZE));
+  if (q.village) params.set("village", q.village);
+  if (statsRange === "custom" && statsCustomFrom && statsCustomTo) {
+    params.set("from", statsCustomFrom);
+    params.set("to", statsCustomTo);
+  } else {
+    params.set("range", statsRange === "custom" ? "today" : statsRange);
+  }
+  return `/api/stats/orders?${params.toString()}`;
+}
 
-function fillStatsOrdersModal({ title, meta, orders, timeKind }) {
+/** @param {{ kind: 'delivered'|'received', village: string, title: string, meta: string }} opts */
+function openStatsOrdersModal(opts) {
+  statsModalQuery = opts;
+  statsModalTimeKind = opts.kind === "received" ? "received" : "delivered";
+  statsModalPage = 1;
+  statsModalOrders = [];
+  statsModalTotal = 0;
+  statsModalTotalPages = 1;
   const titleEl = $("delivered-list-title");
   const metaEl = $("delivered-list-meta");
-  if (titleEl) titleEl.textContent = title;
-  if (metaEl) metaEl.textContent = meta;
-  statsModalOrders = Array.isArray(orders) ? orders : [];
-  statsModalTimeKind = timeKind === "received" ? "received" : "delivered";
-  statsModalPage = 1;
-  paintStatsOrdersModalPage();
+  if (titleEl) titleEl.textContent = opts.title;
+  if (metaEl) metaEl.textContent = opts.meta;
+  const listEl = $("delivered-list");
+  if (listEl) {
+    listEl.innerHTML = `<div class="loading-state" role="status"><span class="loading-spinner" aria-hidden="true"></span><p>Đang tải đơn...</p></div>`;
+  }
+  $("delivered-list-pager")?.classList.add("hidden");
   document.body.classList.add("confirm-open");
   deliveredListModal?.classList.remove("hidden");
   deliveredListModal?.setAttribute("aria-hidden", "false");
@@ -602,10 +642,33 @@ function fillStatsOrdersModal({ title, meta, orders, timeKind }) {
   requestAnimationFrame(() =>
     deliveredListModal?.querySelector("[data-close-delivered-list]")?.focus(),
   );
+  loadStatsOrdersModalPage(1).catch((err) => {
+    toast(err.message || "Không tải được danh sách đơn");
+    if (listEl) listEl.innerHTML = `<p class="empty">Không tải được danh sách.</p>`;
+  });
 }
 
-function statsModalPageCount() {
-  return Math.max(1, Math.ceil(statsModalOrders.length / STATS_MODAL_PAGE_SIZE));
+async function loadStatsOrdersModalPage(page) {
+  if (!statsModalQuery) return;
+  const data = await api(statsOrdersApiUrl(page));
+  statsModalOrders = Array.isArray(data.orders) ? data.orders : [];
+  statsModalTotal = Number(data.total) || 0;
+  statsModalTotalPages = Math.max(1, Number(data.totalPages) || 1);
+  statsModalPage = Math.min(
+    Math.max(1, Number(data.page) || page),
+    statsModalTotalPages,
+  );
+  const titleEl = $("delivered-list-title");
+  if (titleEl && statsModalQuery) {
+    titleEl.textContent = `${statsModalQuery.title} · ${statsModalTotal} đơn`;
+  }
+  if (!statsModalTotal) {
+    const listEl = $("delivered-list");
+    if (listEl) listEl.innerHTML = `<p class="empty">Không có đơn trong kỳ này.</p>`;
+    $("delivered-list-pager")?.classList.add("hidden");
+    return;
+  }
+  paintStatsOrdersModalPage();
 }
 
 function paintStatsOrdersModalPage() {
@@ -614,11 +677,8 @@ function paintStatsOrdersModalPage() {
   const pageEl = $("delivered-list-page");
   const prevBtn = $("delivered-list-prev");
   const nextBtn = $("delivered-list-next");
-  const totalPages = statsModalPageCount();
-  statsModalPage = Math.min(Math.max(1, statsModalPage), totalPages);
-  const start = (statsModalPage - 1) * STATS_MODAL_PAGE_SIZE;
-  const pageOrders = statsModalOrders.slice(start, start + STATS_MODAL_PAGE_SIZE);
   const timeKind = statsModalTimeKind;
+  const pageOrders = statsModalOrders;
 
   if (listEl) {
     listEl.innerHTML = pageOrders
@@ -657,18 +717,18 @@ function paintStatsOrdersModalPage() {
     listEl.scrollTop = 0;
   }
 
-  const showPager = statsModalOrders.length > STATS_MODAL_PAGE_SIZE;
+  const showPager = statsModalTotal > STATS_MODAL_PAGE_SIZE;
   pager?.classList.toggle("hidden", !showPager);
   if (pageEl) {
-    const from = start + 1;
-    const to = start + pageOrders.length;
-    pageEl.textContent = `${statsModalPage} / ${totalPages} · ${from}–${to}`;
+    const from = (statsModalPage - 1) * STATS_MODAL_PAGE_SIZE + 1;
+    const to = Math.min(statsModalTotal, from + pageOrders.length - 1);
+    pageEl.textContent = `${statsModalPage} / ${statsModalTotalPages} · ${from}–${to}`;
   }
   if (prevBtn instanceof HTMLButtonElement) {
     prevBtn.disabled = statsModalPage <= 1;
   }
   if (nextBtn instanceof HTMLButtonElement) {
-    nextBtn.disabled = statsModalPage >= totalPages;
+    nextBtn.disabled = statsModalPage >= statsModalTotalPages;
   }
 }
 
@@ -679,6 +739,8 @@ function closeDeliveredListModal() {
   lockBody(false);
   statsModalOrders = [];
   statsModalPage = 1;
+  statsModalTotal = 0;
+  statsModalQuery = null;
 }
 
 function getQty(id) {
@@ -2733,13 +2795,52 @@ function statsApiUrl() {
   return `/api/stats?range=${encodeURIComponent(statsRange)}`;
 }
 
-async function loadStats() {
+async function loadStats({ silent = false } = {}) {
+  const key = statsCacheKey();
+  if (statsLoadPromise && statsPayloadKey === key && statsLoadingKey === key) {
+    return statsLoadPromise;
+  }
   const root = $("stats");
-  if (root) root.innerHTML = statsLoadingHtml();
+  const cached =
+    statsPayload && statsPayloadKey === key
+      ? statsPayload
+      : readStatsCache(key);
+  if (cached) {
+    statsPayload = cached;
+    statsPayloadKey = key;
+    if (!silent || activeTab === "stats") renderStats();
+  } else if (!silent && root) {
+    root.innerHTML = statsLoadingHtml();
+  }
   syncStatsRangeButtons();
-  const data = await api(statsApiUrl());
-  statsPayload = data || null;
-  renderStats();
+
+  const run = (async () => {
+    const pre = key === "today" ? await takePrefetch("stats") : null;
+    const data =
+      pre && typeof pre.revenue === "number" ? pre : await api(statsApiUrl());
+    if (statsCacheKey() !== key) return;
+    statsPayload = data || null;
+    statsPayloadKey = key;
+    if (data) writeStatsCache(key, data);
+    if (!silent || activeTab === "stats") renderStats();
+  })()
+    .catch((err) => {
+      if (statsCacheKey() !== key) return;
+      if (!statsPayload && root && !silent) {
+        root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
+      }
+      throw err;
+    })
+    .finally(() => {
+      if (statsLoadingKey === key) {
+        statsLoadPromise = null;
+        statsLoadingKey = "";
+      }
+    });
+
+  statsLoadingKey = key;
+  statsLoadPromise = run;
+  return run;
 }
 
 function setStatsRange(next) {
@@ -2748,10 +2849,7 @@ function setStatsRange(next) {
   statsCustomFrom = null;
   statsCustomTo = null;
   syncStatsRangeButtons();
-  loadStats().catch(() => {
-    const root = $("stats");
-    if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
-  });
+  loadStats().catch(() => {});
 }
 
 function setStatsCustomRange(from, to) {
@@ -2763,10 +2861,7 @@ function setStatsCustomRange(from, to) {
   statsCustomTo = b;
   syncStatsRangeButtons();
   closeStatsDateModal();
-  loadStats().catch(() => {
-    const root = $("stats");
-    if (root) root.innerHTML = `<p class="empty">Không tải được thống kê.</p>`;
-  });
+  loadStats().catch(() => {});
 }
 
 function monthStartYmd(ymd) {
@@ -2983,8 +3078,13 @@ async function enterApp() {
   revealApp();
 
   try {
-    // Orders first for home; products in parallel (cached menu already painted)
-    await Promise.all([loadOrders(), loadDoneOrders(), loadProducts()]);
+    // Orders first for home; stats prefetch in parallel (SWR paint when opened)
+    await Promise.all([
+      loadOrders(),
+      loadDoneOrders(),
+      loadProducts(),
+      loadStats({ silent: true }).catch(() => {}),
+    ]);
   } catch {
     if (!ordersCache.length && !doneOrdersCache.length) {
       ordersEl.innerHTML = `<p class="empty">Không tải được đơn.</p>`;
@@ -3223,15 +3323,17 @@ deliveredListModal?.addEventListener("click", (e) => {
   if (!(t instanceof Element)) return;
   if (t.closest("#delivered-list-prev")) {
     if (statsModalPage > 1) {
-      statsModalPage -= 1;
-      paintStatsOrdersModalPage();
+      loadStatsOrdersModalPage(statsModalPage - 1).catch((err) =>
+        toast(err.message || "Không tải được trang"),
+      );
     }
     return;
   }
   if (t.closest("#delivered-list-next")) {
-    if (statsModalPage < statsModalPageCount()) {
-      statsModalPage += 1;
-      paintStatsOrdersModalPage();
+    if (statsModalPage < statsModalTotalPages) {
+      loadStatsOrdersModalPage(statsModalPage + 1).catch((err) =>
+        toast(err.message || "Không tải được trang"),
+      );
     }
     return;
   }

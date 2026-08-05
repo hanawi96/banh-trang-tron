@@ -1,5 +1,5 @@
 /* Bánh tráng cuộn PWA — bump SHELL_CACHE when shipping shell changes */
-const SHELL_CACHE = "bt-shell-v110";
+const SHELL_CACHE = "bt-shell-v111";
 /** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
 const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
