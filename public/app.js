@@ -84,6 +84,8 @@ const selectedOrderIds = new Set();
 const PRINT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" /></svg>`;
 /** @type {any} */
 let editingProduct = null;
+/** true = form đang ở chế độ thêm SP mới */
+let creatingProduct = false;
 /** @type {any} */
 let deletingProduct = null;
 /** @type {any} */
@@ -1721,21 +1723,26 @@ async function printOrdersAndMarkDone(ids) {
 }
 
 function updateOrderFilterCounts() {
-  const open = ordersCache.filter((o) => isOpenStatus(o.status)).length;
+  const openOrders = ordersCache.filter((o) => isOpenStatus(o.status));
+  const open = openOrders.length;
   const done = doneOrdersCache.length;
-  const openIds = new Set(
-    ordersCache.filter((o) => isOpenStatus(o.status)).map((o) => o.id),
-  );
+  const openIds = new Set(openOrders.map((o) => o.id));
   let all = open;
   for (const o of doneOrdersCache) {
     if (!openIds.has(o.id)) all += 1;
   }
+  let pendingRevenue = 0;
+  for (const o of openOrders) {
+    pendingRevenue += Number(o.total) || 0;
+  }
   const countPending = $("count-pending");
   const countDone = $("count-done");
   const countAll = $("count-all");
+  const pendingRevEl = $("pending-revenue");
   if (countPending) countPending.textContent = String(open);
   if (countDone) countDone.textContent = String(done);
   if (countAll) countAll.textContent = String(all);
+  if (pendingRevEl) pendingRevEl.textContent = vnd.format(pendingRevenue);
   if (open > 0) {
     ordersBadge.textContent = String(open);
     ordersBadge.classList.remove("hidden");
@@ -2629,12 +2636,22 @@ function clearPreviewUrl() {
   }
 }
 
+function syncEditPreviewEmpty() {
+  const wrap = $("edit-preview-wrap");
+  if (!wrap || !editPreview) return;
+  const hasSrc = Boolean(editPreview.getAttribute("src"));
+  wrap.classList.toggle("is-empty", !hasSrc);
+}
+
 /** Open edit product modal first; defer image + focus so sheet paints instantly */
 function openEditModal(product) {
+  creatingProduct = false;
   editingProduct = product;
   pendingImageFile = null;
   clearPreviewUrl();
   editImageInput.value = "";
+  const kicker = $("edit-kicker");
+  if (kicker) kicker.textContent = "Chỉnh sửa";
   $("edit-title").textContent = product.name;
   $("edit-name").value = product.name;
   $("edit-price").value = String(product.price);
@@ -2645,11 +2662,14 @@ function openEditModal(product) {
   $("edit-cost-large").value = String(
     product.cost_large ?? Math.max(0, (product.cost ?? 0) + 2000),
   );
+  const label = saveProductBtn?.querySelector(".btn-label");
+  if (label) label.textContent = "Lưu sản phẩm";
 
   // Don't block first paint on full-size image decode
   editPreview.removeAttribute("src");
   editPreview.alt = product.name || "";
   editPreview.decoding = "async";
+  syncEditPreviewEmpty();
 
   editModal.classList.remove("hidden");
   editModal.setAttribute("aria-hidden", "false");
@@ -2665,16 +2685,45 @@ function openEditModal(product) {
       : "";
   // After modal is visible — don't block open on decode
   queueMicrotask(() => {
-    if (editingProduct?.id !== productId) return;
+    if (creatingProduct || editingProduct?.id !== productId) return;
     editPreview.src = cachedSrc || imageUrl(product);
+    syncEditPreviewEmpty();
   });
 }
 
+function openCreateProductModal() {
+  creatingProduct = true;
+  editingProduct = null;
+  pendingImageFile = null;
+  clearPreviewUrl();
+  editImageInput.value = "";
+  const kicker = $("edit-kicker");
+  if (kicker) kicker.textContent = "Thêm mới";
+  $("edit-title").textContent = "Sản phẩm mới";
+  $("edit-name").value = "";
+  $("edit-price").value = "25000";
+  $("edit-cost").value = "12000";
+  $("edit-price-large").value = "30000";
+  $("edit-cost-large").value = "15000";
+  editPreview.removeAttribute("src");
+  editPreview.alt = "";
+  syncEditPreviewEmpty();
+  const label = saveProductBtn?.querySelector(".btn-label");
+  if (label) label.textContent = "Thêm sản phẩm";
+
+  editModal.classList.remove("hidden");
+  editModal.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("edit-name")?.focus());
+}
+
 function closeEditModal() {
+  creatingProduct = false;
   editingProduct = null;
   pendingImageFile = null;
   clearPreviewUrl();
   editPreview.removeAttribute("src");
+  syncEditPreviewEmpty();
   editModal.classList.add("hidden");
   editModal.setAttribute("aria-hidden", "true");
   lockBody(false);
@@ -3620,10 +3669,15 @@ editImageInput.addEventListener("change", () => {
   clearPreviewUrl();
   previewObjectUrl = URL.createObjectURL(file);
   editPreview.src = previewObjectUrl;
+  syncEditPreviewEmpty();
 });
 
 document.querySelectorAll("[data-open-create-order]").forEach((btn) => {
   btn.addEventListener("click", () => openCreateOrder());
+});
+
+$("open-create-product")?.addEventListener("click", () => {
+  openCreateProductModal();
 });
 
 $("show-order-phone")?.addEventListener("click", () => {
@@ -3756,9 +3810,8 @@ $("order-form").addEventListener("submit", async (e) => {
 
 $("edit-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!editingProduct) return;
+  if (!creatingProduct && !editingProduct) return;
 
-  const id = editingProduct.id;
   const name = $("edit-name").value.trim();
   const price = Math.floor(Number($("edit-price").value));
   const cost = Math.floor(Number($("edit-cost").value));
@@ -3778,6 +3831,10 @@ $("edit-form").addEventListener("submit", async (e) => {
     toast("Thông tin chưa hợp lệ");
     return;
   }
+  if (creatingProduct && !pendingImageFile) {
+    toast("Chọn ảnh sản phẩm");
+    return;
+  }
 
   const form = new FormData();
   form.set("name", name);
@@ -3788,19 +3845,28 @@ $("edit-form").addEventListener("submit", async (e) => {
   if (pendingImageFile) form.set("image", pendingImageFile);
 
   const label = saveProductBtn.querySelector(".btn-label");
-  const idleLabel = label?.textContent || "Lưu sản phẩm";
+  const idleLabel =
+    label?.textContent || (creatingProduct ? "Thêm sản phẩm" : "Lưu sản phẩm");
   saveProductBtn.disabled = true;
   saveProductBtn.classList.add("is-busy");
-  if (label) label.textContent = "Đang lưu...";
+  if (label) label.textContent = creatingProduct ? "Đang thêm..." : "Đang lưu...";
   try {
-    const data = await api(`/api/products/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: form,
-    });
-    const next = products.map((p) => (p.id === id ? data.product : p));
-    setProducts(next);
-    closeEditModal();
-    toast("Đã cập nhật sản phẩm");
+    if (creatingProduct) {
+      const data = await api("/api/products", { method: "POST", body: form });
+      setProducts([data.product, ...products]);
+      closeEditModal();
+      toast("Đã thêm sản phẩm");
+    } else {
+      const id = editingProduct.id;
+      const data = await api(`/api/products/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: form,
+      });
+      const next = products.map((p) => (p.id === id ? data.product : p));
+      setProducts(next);
+      closeEditModal();
+      toast("Đã cập nhật sản phẩm");
+    }
   } catch (err) {
     toast(err.message || "Không lưu được");
   } finally {

@@ -69,9 +69,15 @@
               Tất cả <em id="count-all">0</em>
             </button>
           </div>
-          <button type="button" class="prepare-open-btn" id="open-prepare">
-            Chuẩn bị
-          </button>
+          <div class="prepare-row">
+            <div class="pending-revenue" aria-live="polite">
+              <span class="pending-revenue-label">Doanh thu tạm tính</span>
+              <strong class="pending-revenue-value" id="pending-revenue">0đ</strong>
+            </div>
+            <button type="button" class="prepare-open-btn" id="open-prepare">
+              Chuẩn bị
+            </button>
+          </div>
         </div>
         <div id="orders" class="order-list" aria-busy="true">
           <div class="order-skeleton" aria-hidden="true">
@@ -84,11 +90,17 @@
 
       <section id="tab-products" class="tab-panel hidden" data-tab="products">
         <div class="home-cta">
-          <p class="home-cta-sub">Tạo đơn nhanh cho khách</p>
-          <button type="button" class="btn primary home-cta-btn" data-open-create-order>
-            <span class="home-cta-icon" aria-hidden="true">+</span>
-            <span>Thêm đơn hàng</span>
-          </button>
+          <p class="home-cta-sub">Quản lý món và tạo đơn nhanh</p>
+          <div class="home-cta-actions">
+            <button type="button" class="btn primary home-cta-btn" id="open-create-product">
+              <span class="home-cta-icon" aria-hidden="true">+</span>
+              <span>Thêm SP</span>
+            </button>
+            <button type="button" class="btn primary home-cta-btn" data-open-create-order>
+              <span class="home-cta-icon" aria-hidden="true">+</span>
+              <span>Thêm đơn hàng</span>
+            </button>
+          </div>
         </div>
         <div id="menu" class="product-list"></div>
       </section>
@@ -393,7 +405,7 @@
         <div class="modal-grab"></div>
         <header class="modal-head">
           <div>
-            <p class="modal-kicker">Chỉnh sửa</p>
+            <p class="modal-kicker" id="edit-kicker">Chỉnh sửa</p>
             <h2 id="edit-title">Sản phẩm</h2>
           </div>
           <button type="button" class="icon-btn" data-close-edit aria-label="Đóng">
@@ -402,7 +414,14 @@
         </header>
         <form id="edit-form" class="modal-form">
           <label class="image-picker">
-            <img id="edit-preview" alt="" width="96" height="96" decoding="async" />
+            <span class="image-picker-media is-empty" id="edit-preview-wrap">
+              <img id="edit-preview" alt="" width="96" height="96" decoding="async" />
+              <span class="image-picker-placeholder" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                </svg>
+              </span>
+            </span>
             <div>
               <strong>Ảnh sản phẩm</strong>
               <p>Chạm để chọn ảnh mới (webp/jpg/png, tối đa 2MB)</p>

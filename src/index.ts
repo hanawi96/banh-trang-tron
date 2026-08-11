@@ -53,6 +53,143 @@ app.get("/api/products", async (c) => {
   return c.json({ products });
 });
 
+app.post("/api/products", async (c) => {
+  const db = getDb(c.env);
+  await ensureSchema(db);
+
+  const contentType = c.req.header("content-type") || "";
+  let name = "";
+  let price = 0;
+  let cost = 0;
+  let price_large = 0;
+  let cost_large = 0;
+  let file: File | null = null;
+
+  if (contentType.includes("multipart/form-data")) {
+    const body = await c.req.parseBody();
+    if (typeof body.name === "string") name = body.name.trim();
+    if (typeof body.price === "string" || typeof body.price === "number") {
+      price = Math.floor(Number(body.price));
+    }
+    if (typeof body.cost === "string" || typeof body.cost === "number") {
+      cost = Math.floor(Number(body.cost));
+    }
+    if (
+      typeof body.price_large === "string" ||
+      typeof body.price_large === "number"
+    ) {
+      price_large = Math.floor(Number(body.price_large));
+    }
+    if (
+      typeof body.cost_large === "string" ||
+      typeof body.cost_large === "number"
+    ) {
+      cost_large = Math.floor(Number(body.cost_large));
+    }
+    if (body.image instanceof File && body.image.size > 0) {
+      file = body.image;
+    }
+  } else {
+    const body = await c.req
+      .json<{
+        name?: string;
+        price?: number;
+        cost?: number;
+        price_large?: number;
+        cost_large?: number;
+      }>()
+      .catch(() => null);
+    if (!body) return c.json({ error: "Dữ liệu không hợp lệ" }, 400);
+    if (typeof body.name === "string") name = body.name.trim();
+    if (body.price !== undefined) price = Math.floor(Number(body.price));
+    if (body.cost !== undefined) cost = Math.floor(Number(body.cost));
+    if (body.price_large !== undefined) {
+      price_large = Math.floor(Number(body.price_large));
+    }
+    if (body.cost_large !== undefined) {
+      cost_large = Math.floor(Number(body.cost_large));
+    }
+  }
+
+  if (!name || name.length > 120) {
+    return c.json({ error: "Tên sản phẩm không hợp lệ" }, 400);
+  }
+  if (!Number.isFinite(price) || price < 0 || price > 50_000_000) {
+    return c.json({ error: "Giá size nhỏ không hợp lệ" }, 400);
+  }
+  if (!Number.isFinite(cost) || cost < 0 || cost > 50_000_000) {
+    return c.json({ error: "Giá vốn size nhỏ không hợp lệ" }, 400);
+  }
+  if (
+    !Number.isFinite(price_large) ||
+    price_large < 0 ||
+    price_large > 50_000_000
+  ) {
+    return c.json({ error: "Giá size to không hợp lệ" }, 400);
+  }
+  if (
+    !Number.isFinite(cost_large) ||
+    cost_large < 0 ||
+    cost_large > 50_000_000
+  ) {
+    return c.json({ error: "Giá vốn size to không hợp lệ" }, 400);
+  }
+  if (!file) {
+    return c.json({ error: "Chọn ảnh sản phẩm" }, 400);
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return c.json({ error: "Ảnh tối đa 2MB" }, 400);
+  }
+  const type = file.type || "image/webp";
+  if (!ALLOWED_IMAGE.has(type)) {
+    return c.json({ error: "Chỉ nhận ảnh webp/jpg/png" }, 400);
+  }
+
+  const id = crypto.randomUUID();
+  const key = `products/${id}-${Date.now()}.${extFromType(type)}`;
+  await c.env.IMAGES.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: type },
+  });
+
+  const updated_at = Date.now();
+  const sortRow = await db.execute(
+    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort FROM products`,
+  );
+  const sort_order = Number(sortRow.rows[0]?.next_sort) || 1;
+
+  await db.execute({
+    sql: `INSERT INTO products
+          (id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    args: [
+      id,
+      name,
+      price,
+      cost,
+      price_large,
+      cost_large,
+      key,
+      sort_order,
+      updated_at,
+    ],
+  });
+
+  return c.json({
+    product: {
+      id,
+      name,
+      price,
+      cost,
+      price_large,
+      cost_large,
+      image: key,
+      sort_order,
+      sold_count: 0,
+      updated_at,
+    },
+  });
+});
+
 app.put("/api/products/:id", async (c) => {
   const id = c.req.param("id");
   const db = getDb(c.env);
