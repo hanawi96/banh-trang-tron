@@ -983,11 +983,22 @@ body.confirm-open .order-bulk-popup {
 }
 
 .pending-revenue-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.72rem;
   font-weight: 700;
   color: var(--muted);
   letter-spacing: -0.01em;
   line-height: 1.2;
+}
+
+.pending-revenue-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent-2);
+  opacity: 0.85;
 }
 
 .pending-revenue-value {
