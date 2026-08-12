@@ -1895,14 +1895,25 @@ function paintOrdersBoard() {
   const frag = document.createDocumentFragment();
   let lastVillageKey = null;
   const showVillageGroups = orderFilter !== "done";
+  /** @type {Map<string, number>} */
+  const villageCounts = new Map();
+  if (showVillageGroups) {
+    for (const o of visible) {
+      const villageName = parseVillage(o.village) || (o.village ? String(o.village) : "");
+      const villageKey = villageName || "__none__";
+      villageCounts.set(villageKey, (villageCounts.get(villageKey) || 0) + 1);
+    }
+  }
   for (const o of visible) {
     const villageName = parseVillage(o.village) || (o.village ? String(o.village) : "");
     const villageKey = villageName || "__none__";
     if (showVillageGroups && villageKey !== lastVillageKey) {
       lastVillageKey = villageKey;
+      const count = villageCounts.get(villageKey) || 0;
+      const label = villageName || "Chưa chọn thôn";
       const group = document.createElement("div");
       group.className = "order-village-group";
-      group.textContent = villageName || "Chưa chọn thôn";
+      group.textContent = `${label} (${count} đơn)`;
       frag.appendChild(group);
     }
     const el = document.createElement("article");
