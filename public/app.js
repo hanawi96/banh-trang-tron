@@ -77,6 +77,9 @@ let statsPickFrom = "";
 let statsPickTo = "";
 /** @type {'pending'|'done'|'all'} — pending filter = chưa giao (pending|printed) */
 let orderFilter = "pending";
+/** Chuỗi tìm đơn theo tên khách (đã trim) */
+let orderSearchQuery = "";
+let orderSearchRaf = 0;
 /** @type {Set<string>} */
 const statusBusy = new Set();
 /** @type {Set<string>} */
@@ -193,6 +196,23 @@ function formatCustomerName(s) {
       return `${first}${rest}`;
     })
     .join(" ");
+}
+
+/** Bỏ dấu tiếng Việt để tìm tên nhanh, không phân biệt hoa thường */
+function foldVn(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function matchesCustomerSearch(order, queryFolded) {
+  if (!queryFolded) return true;
+  return foldVn(order?.customer).includes(queryFolded);
 }
 
 function imagesPath(key) {
@@ -1164,9 +1184,11 @@ function statusRank(status) {
 
 /** Đơn chưa giao đang hiện trên board — chọn hàng loạt */
 function openVisibleIds() {
+  const q = foldVn(orderSearchQuery);
   return ordersCache
     .filter((o) => isOpenStatus(o.status))
     .filter((o) => matchesOrderFilter(o.status))
+    .filter((o) => matchesCustomerSearch(o, q))
     .map((o) => o.id);
 }
 
@@ -1836,15 +1858,21 @@ function ensureOrderOnBoard(order) {
   }
 }
 
-/** Danh sách hiển thị theo tab lọc */
+/** Danh sách hiển thị theo tab lọc + tìm tên khách */
 function boardOrdersForFilter() {
-  if (orderFilter === "done") return doneOrdersCache;
-  if (orderFilter === "pending") {
-    return ordersCache.filter((o) => isOpenStatus(o.status));
+  const q = foldVn(orderSearchQuery);
+  let list;
+  if (orderFilter === "done") {
+    list = doneOrdersCache;
+  } else if (orderFilter === "pending") {
+    list = ordersCache.filter((o) => isOpenStatus(o.status));
+  } else {
+    const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
+    const openIds = new Set(open.map((o) => o.id));
+    list = [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
   }
-  const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
-  const openIds = new Set(open.map((o) => o.id));
-  return [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
+  if (!q) return list;
+  return list.filter((o) => matchesCustomerSearch(o, q));
 }
 
 /** Cập nhật board upcoming (nếu có list) rồi vẽ lại */
@@ -1882,12 +1910,15 @@ function paintOrdersBoard() {
     return;
   }
   if (!visible.length) {
+    const searching = Boolean(foldVn(orderSearchQuery));
     ordersEl.innerHTML = `<p class="empty">${
-      orderFilter === "pending"
-        ? "Không còn đơn chưa giao."
-        : orderFilter === "done"
-          ? "Chưa có đơn đã giao."
-          : "Chưa có đơn cần giao."
+      searching
+        ? `Không tìm thấy khách “${escapeHtml(orderSearchQuery.trim())}”.`
+        : orderFilter === "pending"
+          ? "Không còn đơn chưa giao."
+          : orderFilter === "done"
+            ? "Chưa có đơn đã giao."
+            : "Chưa có đơn cần giao."
     }</p>`;
     return;
   }
@@ -3258,6 +3289,40 @@ document.querySelector("#tab-orders .order-filters")?.addEventListener("click", 
   if (next !== "pending" && next !== "done" && next !== "all") return;
   orderFilter = next;
   if (next === "done") selectedOrderIds.clear();
+  paintOrdersBoard();
+});
+
+function syncOrderSearchClear() {
+  $("order-search-clear")?.classList.toggle(
+    "hidden",
+    !String(orderSearchQuery || "").trim(),
+  );
+}
+
+function scheduleOrderSearchPaint() {
+  if (orderSearchRaf) cancelAnimationFrame(orderSearchRaf);
+  orderSearchRaf = requestAnimationFrame(() => {
+    orderSearchRaf = 0;
+    paintOrdersBoard();
+  });
+}
+
+$("order-search")?.addEventListener("input", (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement)) return;
+  orderSearchQuery = t.value || "";
+  syncOrderSearchClear();
+  scheduleOrderSearchPaint();
+});
+
+$("order-search-clear")?.addEventListener("click", () => {
+  const input = $("order-search");
+  orderSearchQuery = "";
+  if (input instanceof HTMLInputElement) {
+    input.value = "";
+    input.focus();
+  }
+  syncOrderSearchClear();
   paintOrdersBoard();
 });
 

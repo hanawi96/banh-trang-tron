@@ -1039,6 +1039,63 @@ body.confirm-open .order-bulk-popup {
   background: rgba(16, 35, 28, 0.06);
 }
 
+.order-search {
+  position: relative;
+  display: grid;
+  align-items: center;
+}
+
+.order-search-icon {
+  position: absolute;
+  left: 12px;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.order-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 36px 8px 38px;
+  border: 1px solid rgba(211, 224, 217, 0.95);
+  border-radius: 12px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--ink);
+  outline: none;
+}
+
+.order-search input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.order-search input:focus {
+  border-color: rgba(12, 122, 82, 0.45);
+  box-shadow: 0 0 0 3px rgba(12, 122, 82, 0.1);
+}
+
+.order-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.order-search-clear.hidden {
+  display: none;
+}
+
 .order-bulk-popup {
   position: fixed;
   left: 0;

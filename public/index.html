@@ -69,6 +69,23 @@
               Tất cả <em id="count-all">0</em>
             </button>
           </div>
+          <label class="order-search">
+            <svg class="order-search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+            <input
+              id="order-search"
+              type="search"
+              enterkeyhint="search"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Tìm theo tên khách..."
+              aria-label="Tìm đơn theo tên khách"
+            />
+            <button type="button" class="order-search-clear hidden" id="order-search-clear" aria-label="Xóa tìm kiếm">
+              ×
+            </button>
+          </label>
           <div class="prepare-row">
             <div class="pending-revenue" aria-live="polite">
               <span class="pending-revenue-label">
