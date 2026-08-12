@@ -93,6 +93,8 @@ let creatingProduct = false;
 let deletingProduct = null;
 /** @type {any} */
 let editingOrder = null;
+/** true = form sửa đang nhân bản → POST tạo đơn mới */
+let cloningOrder = false;
 /** @type {Array<{id:string,name:string,size:'nho'|'to',qty:number,price:number,image?:string}>} */
 let editOrderItems = [];
 /** @type {string[]} */
@@ -106,6 +108,7 @@ let pendingImageFile = null;
 let previewObjectUrl = "";
 
 const EDIT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"/></svg>`;
+const CLONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z"/></svg>`;
 const DELETE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
 const PLUS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>`;
@@ -1185,9 +1188,10 @@ function statusRank(status) {
 /** Đơn chưa giao đang hiện trên board — chọn hàng loạt */
 function openVisibleIds() {
   const q = foldVn(orderSearchQuery);
+  // Khi tìm kiếm: chọn hết chỉ áp dụng đơn chưa giao khớp tên
   return ordersCache
     .filter((o) => isOpenStatus(o.status))
-    .filter((o) => matchesOrderFilter(o.status))
+    .filter((o) => (q ? true : matchesOrderFilter(o.status)))
     .filter((o) => matchesCustomerSearch(o, q))
     .map((o) => o.id);
 }
@@ -1861,18 +1865,26 @@ function ensureOrderOnBoard(order) {
 /** Danh sách hiển thị theo tab lọc + tìm tên khách */
 function boardOrdersForFilter() {
   const q = foldVn(orderSearchQuery);
-  let list;
-  if (orderFilter === "done") {
-    list = doneOrdersCache;
-  } else if (orderFilter === "pending") {
-    list = ordersCache.filter((o) => isOpenStatus(o.status));
-  } else {
-    const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
+  // Đang tìm → quét mọi trạng thái: chưa giao trước, đã giao sau
+  if (q) {
+    const open = sortOrders(
+      ordersCache.filter(
+        (o) => isOpenStatus(o.status) && matchesCustomerSearch(o, q),
+      ),
+    );
     const openIds = new Set(open.map((o) => o.id));
-    list = [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
+    const done = doneOrdersCache.filter(
+      (o) => !openIds.has(o.id) && matchesCustomerSearch(o, q),
+    );
+    return [...open, ...done];
   }
-  if (!q) return list;
-  return list.filter((o) => matchesCustomerSearch(o, q));
+  if (orderFilter === "done") return doneOrdersCache;
+  if (orderFilter === "pending") {
+    return ordersCache.filter((o) => isOpenStatus(o.status));
+  }
+  const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
+  const openIds = new Set(open.map((o) => o.id));
+  return [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
 }
 
 /** Cập nhật board upcoming (nếu có list) rồi vẽ lại */
@@ -1925,19 +1937,49 @@ function paintOrdersBoard() {
 
   const frag = document.createDocumentFragment();
   let lastVillageKey = null;
-  const showVillageGroups = orderFilter !== "done";
+  let lastSearchBlock = null;
+  const searching = Boolean(foldVn(orderSearchQuery));
+  const showVillageGroups = searching || orderFilter !== "done";
   /** @type {Map<string, number>} */
   const villageCounts = new Map();
   if (showVillageGroups) {
     for (const o of visible) {
       const villageName = parseVillage(o.village) || (o.village ? String(o.village) : "");
-      const villageKey = villageName || "__none__";
+      const status = normalizeStatus(o.status);
+      const block = searching
+        ? isOpenStatus(status)
+          ? "open"
+          : "done"
+        : "all";
+      const villageKey = `${block}:${villageName || "__none__"}`;
       villageCounts.set(villageKey, (villageCounts.get(villageKey) || 0) + 1);
     }
   }
   for (const o of visible) {
+    const status = normalizeStatus(o.status);
     const villageName = parseVillage(o.village) || (o.village ? String(o.village) : "");
-    const villageKey = villageName || "__none__";
+    const searchBlock = searching
+      ? isOpenStatus(status)
+        ? "open"
+        : "done"
+      : "all";
+    if (searching && searchBlock !== lastSearchBlock) {
+      lastSearchBlock = searchBlock;
+      lastVillageKey = null;
+      const blockCount = visible.filter((x) =>
+        searchBlock === "open"
+          ? isOpenStatus(normalizeStatus(x.status))
+          : !isOpenStatus(normalizeStatus(x.status)),
+      ).length;
+      const blockHead = document.createElement("div");
+      blockHead.className = "order-search-block";
+      blockHead.textContent =
+        searchBlock === "open"
+          ? `Chưa giao (${blockCount} đơn)`
+          : `Đã giao (${blockCount} đơn)`;
+      frag.appendChild(blockHead);
+    }
+    const villageKey = `${searchBlock}:${villageName || "__none__"}`;
     if (showVillageGroups && villageKey !== lastVillageKey) {
       lastVillageKey = villageKey;
       const count = villageCounts.get(villageKey) || 0;
@@ -1948,7 +1990,6 @@ function paintOrdersBoard() {
       frag.appendChild(group);
     }
     const el = document.createElement("article");
-    const status = normalizeStatus(o.status);
     el.className = `order order-${status}`;
     el.dataset.orderId = o.id;
     const customerName = formatCustomerName(o.customer);
@@ -1987,7 +2028,7 @@ function paintOrdersBoard() {
       : "";
     const actionBtn =
       status === "done"
-        ? "Hoàn tác · Chưa giao"
+        ? "Hoàn tác"
         : status === "printed"
           ? `${CHECK_ICON}<span>Đánh dấu đã giao</span>`
           : `${PRINT_ICON}<span>In đơn</span>`;
@@ -2061,6 +2102,9 @@ function paintOrdersBoard() {
           ${quickDeliverBtn}
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
             ${EDIT_ICON}
+          </button>
+          <button type="button" class="order-clone-icon" data-clone-order="${escapeHtml(o.id)}" aria-label="Nhân bản đơn">
+            ${CLONE_ICON}
           </button>
           <button type="button" class="order-delete-icon" data-delete-order="${escapeHtml(o.id)}" aria-label="Xóa đơn">
             ${DELETE_ICON}
@@ -2523,10 +2567,85 @@ function refreshEditOrderMeta() {
   }
   const label = saveEditOrderBtn?.querySelector(".btn-label");
   if (label && !saveEditOrderBtn.classList.contains("is-busy")) {
-    label.textContent = lines
-      ? `Lưu thay đổi (${formatVnd(total)})`
-      : "Lưu thay đổi";
+    if (cloningOrder) {
+      label.textContent = lines
+        ? `Tạo đơn mới (${formatVnd(total)})`
+        : "Tạo đơn mới";
+    } else {
+      label.textContent = lines
+        ? `Lưu thay đổi (${formatVnd(total)})`
+        : "Lưu thay đổi";
+    }
   }
+}
+
+function openEditOrderModal(order, { clone = false } = {}) {
+  cloningOrder = Boolean(clone);
+  editingOrder = clone ? null : order;
+  clearComposeInvalid(editOrderModal);
+  const items = order.items || [];
+  editOrderItems = items.map((item) => {
+    const size = normalizeSize(item.size);
+    const catalog = products.find((p) => p.id === item.id);
+    return {
+      id: item.id,
+      name: item.name,
+      size,
+      qty: Math.max(1, Math.min(99, Number(item.qty) || 1)),
+      price: catalog
+        ? productUnitPrice(catalog, size)
+        : Number(item.price) || 0,
+      image: item.image || resolveItemImage(item),
+    };
+  });
+  const kicker = $("edit-order-kicker");
+  if (kicker) kicker.textContent = clone ? "Nhân bản" : "Sửa đơn";
+  $("edit-order-title").textContent = clone ? "Nhân bản đơn hàng" : "Sửa đơn hàng";
+  $("edit-order-customer").value = formatCustomerName(order.customer);
+  syncOptionalFields("edit", {
+    phone: order.phone || "",
+    note: order.note || "",
+  });
+  const allowedDates = new Set(deliveryDateOptions().map((o) => o.ymd));
+  const deliveryDate =
+    order.delivery_date && allowedDates.has(order.delivery_date)
+      ? order.delivery_date
+      : defaultDeliveryYmd();
+  renderDeliveryDateOptions(
+    "edit-delivery-date-options",
+    "edit_delivery_date",
+    deliveryDate,
+    clone ? "" : order.delivery_date || "",
+  );
+  setDeliverySlot(
+    "edit_delivery_slot",
+    order.delivery_slot === "chieu" ? "chieu" : "trua",
+  );
+  renderVillageOptions(
+    "edit-order-village-options",
+    "edit_village",
+    order.village || "",
+  );
+  renderEditOrderItems();
+  renderProductList(editOrderMenuEl, { manage: false });
+  editOrderModal.classList.remove("hidden");
+  editOrderModal.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("edit-order-customer")?.focus());
+}
+
+function openCloneOrderModal(order) {
+  openEditOrderModal(order, { clone: true });
+}
+
+function closeEditOrderModal() {
+  cloningOrder = false;
+  editingOrder = null;
+  editOrderItems = [];
+  if (editOrderMenuEl) editOrderMenuEl.replaceChildren();
+  editOrderModal.classList.add("hidden");
+  editOrderModal.setAttribute("aria-hidden", "true");
+  lockBody(false);
 }
 
 function renderEditOrderItems() {
@@ -2596,62 +2715,6 @@ function setEditOrderLineSize(key, size) {
     line.price = price;
   }
   renderEditOrderItems();
-}
-
-function openEditOrderModal(order) {
-  editingOrder = order;
-  clearComposeInvalid(editOrderModal);
-  const items = order.items || [];
-  editOrderItems = items.map((item) => {
-    const size = normalizeSize(item.size);
-    const catalog = products.find((p) => p.id === item.id);
-    return {
-      id: item.id,
-      name: item.name,
-      size,
-      qty: Math.max(1, Math.min(99, Number(item.qty) || 1)),
-      price: catalog
-        ? productUnitPrice(catalog, size)
-        : Number(item.price) || 0,
-      image: item.image || resolveItemImage(item),
-    };
-  });
-  $("edit-order-title").textContent = "Sửa đơn hàng";
-  $("edit-order-customer").value = formatCustomerName(order.customer);
-  syncOptionalFields("edit", {
-    phone: order.phone || "",
-    note: order.note || "",
-  });
-  renderDeliveryDateOptions(
-    "edit-delivery-date-options",
-    "edit_delivery_date",
-    order.delivery_date || defaultDeliveryYmd(),
-    order.delivery_date || "",
-  );
-  setDeliverySlot(
-    "edit_delivery_slot",
-    order.delivery_slot === "chieu" ? "chieu" : "trua",
-  );
-  renderVillageOptions(
-    "edit-order-village-options",
-    "edit_village",
-    order.village || "",
-  );
-  renderEditOrderItems();
-  renderProductList(editOrderMenuEl, { manage: false });
-  editOrderModal.classList.remove("hidden");
-  editOrderModal.setAttribute("aria-hidden", "false");
-  lockBody(true);
-  requestAnimationFrame(() => $("edit-order-customer")?.focus());
-}
-
-function closeEditOrderModal() {
-  editingOrder = null;
-  editOrderItems = [];
-  if (editOrderMenuEl) editOrderMenuEl.replaceChildren();
-  editOrderModal.classList.add("hidden");
-  editOrderModal.setAttribute("aria-hidden", "true");
-  lockBody(false);
 }
 
 function updateEditOrderLine(key, delta) {
@@ -3534,6 +3597,13 @@ ordersEl.addEventListener("click", (e) => {
     if (order) openEditOrderModal(order);
     return;
   }
+  const cloneBtn = t.closest("[data-clone-order]");
+  if (cloneBtn) {
+    const id = cloneBtn.getAttribute("data-clone-order");
+    const order = findOrder(id);
+    if (order) openCloneOrderModal(order);
+    return;
+  }
   const deleteBtn = t.closest("[data-delete-order]");
   if (deleteBtn) {
     const id = deleteBtn.getAttribute("data-delete-order");
@@ -3648,7 +3718,7 @@ $("edit-order-customer")?.addEventListener("input", () => {
 
 $("edit-order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!editingOrder) return;
+  if (!cloningOrder && !editingOrder) return;
   const nameEl = $("edit-order-customer");
   const customer = formatCustomerName(nameEl?.value || "");
   if (!customer) {
@@ -3678,34 +3748,48 @@ $("edit-order-form").addEventListener("submit", async (e) => {
   }
   const delivery_date =
     selectedDeliveryDate("edit_delivery_date") || defaultDeliveryYmd();
+  const payload = {
+    items: editOrderItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      size: normalizeSize(item.size),
+      image: item.image || resolveItemImage(item),
+      qty: item.qty,
+    })),
+    delivery_slot,
+    delivery_date,
+    village,
+    customer,
+    phone: $("edit-order-phone").value.trim(),
+    note: $("edit-order-note").value.trim(),
+  };
   const label = saveEditOrderBtn?.querySelector(".btn-label");
   saveEditOrderBtn.disabled = true;
   saveEditOrderBtn.classList.add("is-busy");
-  if (label) label.textContent = "Đang lưu...";
+  if (label) label.textContent = cloningOrder ? "Đang tạo..." : "Đang lưu...";
   try {
-    await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        items: editOrderItems.map((item) => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          size: normalizeSize(item.size),
-          image: item.image || resolveItemImage(item),
-          qty: item.qty,
-        })),
-        delivery_slot,
-        delivery_date,
-        village,
-        customer,
-        phone: $("edit-order-phone").value.trim(),
-        note: $("edit-order-note").value.trim(),
-      }),
-    });
-    clearComposeInvalid(editOrderModal);
-    closeEditOrderModal();
-    toast("Đã cập nhật đơn");
+    if (cloningOrder) {
+      await api("/api/orders", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      clearComposeInvalid(editOrderModal);
+      closeEditOrderModal();
+      toast("Đã nhân bản đơn");
+    } else {
+      await api(`/api/orders/${encodeURIComponent(editingOrder.id)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      clearComposeInvalid(editOrderModal);
+      closeEditOrderModal();
+      toast("Đã cập nhật đơn");
+    }
     await Promise.all([loadOrders(), loadProducts()]);
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
   } catch (err) {
     toast(err.message || "Không lưu được");
   } finally {

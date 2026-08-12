@@ -811,6 +811,19 @@ body.confirm-open .order-bulk-popup {
   margin-top: 2px;
 }
 
+.order-search-block {
+  margin: 16px 0 4px;
+  padding: 0 2px;
+  font-size: 0.84rem;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.order-search-block:first-child {
+  margin-top: 2px;
+}
+
 .order-village {
   display: inline-flex;
   align-items: center;
@@ -1066,6 +1079,13 @@ body.confirm-open .order-bulk-popup {
   font-weight: 650;
   color: var(--ink);
   outline: none;
+}
+
+.order-search input::-webkit-search-cancel-button,
+.order-search input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 
 .order-search input::placeholder {
@@ -1324,13 +1344,13 @@ body.bulk-open .tabbar {
 
 .order-actions {
   display: grid;
-  grid-template-columns: 1fr 42px 42px;
+  grid-template-columns: minmax(0, 1fr) 42px 42px 42px;
   gap: 8px;
   align-items: center;
 }
 
 .order-actions-pending {
-  grid-template-columns: 1fr 1fr 42px 42px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px 42px 42px;
 }
 
 .order-status-btn {
@@ -1355,6 +1375,7 @@ body.bulk-open .tabbar {
 }
 
 .order-actions .order-edit-icon,
+.order-actions .order-clone-icon,
 .order-actions .order-delete-icon {
   width: 42px;
   height: 42px;
@@ -1432,6 +1453,7 @@ body.bulk-open .tabbar {
 }
 
 .order-edit-icon,
+.order-clone-icon,
 .order-delete-icon {
   width: 30px;
   height: 30px;
@@ -1452,12 +1474,14 @@ body.bulk-open .tabbar {
 }
 
 .order-edit-icon svg,
+.order-clone-icon svg,
 .order-delete-icon svg {
   width: 15px;
   height: 15px;
 }
 
-.order-edit-icon:active {
+.order-edit-icon:active,
+.order-clone-icon:active {
   transform: scale(0.96);
   background: var(--accent-soft);
 }
