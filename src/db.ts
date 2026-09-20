@@ -311,7 +311,7 @@ export async function applyOrdersStatus(
   if (status === "pending") {
     await db.execute({
       sql: `UPDATE orders
-            SET status = ?, printed_at = NULL, delivered_at = NULL
+            SET status = ?, printed_at = NULL, delivered_at = NULL, paid_at = NULL
             WHERE id IN (${placeholders})`,
       args: [status, ...unique],
     });

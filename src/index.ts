@@ -974,7 +974,7 @@ app.patch("/api/orders/:id/status", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const existing = await db.execute({
-    sql: `SELECT id, printed_at, delivered_at FROM orders WHERE id = ? LIMIT 1`,
+    sql: `SELECT id, printed_at, delivered_at, paid_at FROM orders WHERE id = ? LIMIT 1`,
     args: [id],
   });
   if (!existing.rows.length) {
@@ -982,6 +982,7 @@ app.patch("/api/orders/:id/status", async (c) => {
   }
   const { at } = await applyOrdersStatus(db, [id], status, { setPrinted });
   const prevPrinted = parseTs(existing.rows[0]?.printed_at);
+  const prevPaid = parseTs(existing.rows[0]?.paid_at);
   const printed_at =
     status === "pending"
       ? null
@@ -989,8 +990,10 @@ app.patch("/api/orders/:id/status", async (c) => {
         ? prevPrinted || at
         : prevPrinted;
   const delivered_at = status === "done" ? at : null;
+  // Hoàn tác giao → bỏ luôn trạng thái thanh toán để đồng bộ với frontend
+  const paid_at = status === "pending" ? null : prevPaid;
 
-  return c.json({ ok: true, id, status, printed_at, delivered_at, at });
+  return c.json({ ok: true, id, status, printed_at, delivered_at, paid_at, at });
 });
 
 app.post("/api/orders/status-bulk", async (c) => {

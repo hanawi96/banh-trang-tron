@@ -165,6 +165,9 @@ function applyLocalTimeline(order, nextStatus, opts = {}) {
   if (next === "pending") {
     order.printed_at = null;
     order.delivered_at = null;
+    // Hoàn tác giao → đơn về chưa giao thì trạng thái thanh toán cũng phải bỏ
+    // (tránh đơn "chưa giao" mà vẫn hiển thị Đã CK)
+    order.paid_at = null;
   } else if (next === "printed") {
     order.printed_at = Number(order.printed_at) > 0 ? order.printed_at : at;
     order.delivered_at = null;
@@ -2302,6 +2305,7 @@ async function setOrderStatus(id, status, opts = {}) {
     status: prev.status,
     printed_at: prev.printed_at ?? null,
     delivered_at: prev.delivered_at ?? null,
+    paid_at: prev.paid_at ?? null,
   };
   statusBusy.add(id);
   applyLocalTimeline(prev, next, { setPrinted });
@@ -2322,6 +2326,7 @@ async function setOrderStatus(id, status, opts = {}) {
     });
     if (data && "printed_at" in data) prev.printed_at = data.printed_at;
     if (data && "delivered_at" in data) prev.delivered_at = data.delivered_at;
+    if (data && "paid_at" in data) prev.paid_at = data.paid_at;
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
@@ -2332,6 +2337,7 @@ async function setOrderStatus(id, status, opts = {}) {
     prev.status = snap.status;
     prev.printed_at = snap.printed_at;
     prev.delivered_at = snap.delivered_at;
+    prev.paid_at = snap.paid_at;
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
@@ -2473,6 +2479,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     status: o.status,
     printed_at: o.printed_at ?? null,
     delivered_at: o.delivered_at ?? null,
+    paid_at: o.paid_at ?? null,
   }));
   for (const o of targets) {
     applyLocalTimeline(o, next, { setPrinted });
@@ -2523,6 +2530,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       o.status = s.status;
       o.printed_at = s.printed_at;
       o.delivered_at = s.delivered_at;
+      o.paid_at = s.paid_at;
       syncDoneOrdersCache(o);
       ensureOrderOnBoard(o);
     }
