@@ -1365,13 +1365,13 @@ function updateBulkBar() {
   const actionsWrap = bulk.querySelector(".order-bulk-actions");
   if (actionsWrap) {
     if (isDoneTab) {
+      actionsWrap.classList.add("done-tab");
       actionsWrap.innerHTML = `
         <label class="bulk-select-all-label">
           <input type="checkbox" id="bulk-select-all-checkbox" />
-          <span>Tất cả</span>
+          <span>Chọn tất cả</span>
         </label>
-        <button type="button" class="btn ghost lg" id="bulk-undo-deliver">Hoàn tác giao</button>
-        <button type="button" class="btn ghost lg" id="bulk-unpaid">Hủy thanh toán</button>
+        <button type="button" class="btn primary" id="bulk-unpaid">Đã thanh toán</button>
         <button type="button" class="btn danger icon-only sm" id="bulk-delete" title="Xóa">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
             <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -1386,6 +1386,7 @@ function updateBulkBar() {
         checkbox.indeterminate = n > 0 && n < visibleIds.length;
       }
     } else {
+      actionsWrap.classList.remove("done-tab");
       actionsWrap.innerHTML = `
         <button type="button" class="btn ghost" id="bulk-select-all">Chọn hết</button>
         <button type="button" class="btn ghost" id="bulk-export-pdf">In</button>
@@ -1506,11 +1507,10 @@ function buildPrintSummaryPageHtml(list) {
 </section>`;
 }
 
-/** Group slips into A6 pages — bulk: summary first; single: slips only */
+/** Group slips into A6 pages */
 function buildPrintPagesHtml(list) {
   const total = list.length;
   const pages = [];
-  if (total > 1) pages.push(buildPrintSummaryPageHtml(list));
   for (let i = 0; i < total; i += 2) {
     const top = buildOrderSlipHtml(list[i], i, total, "top");
     const bottom =
@@ -1535,56 +1535,6 @@ position:relative;width:105mm;height:148mm;overflow:hidden;
 break-inside:avoid;page-break-inside:avoid
 }
 .page+.page{break-before:page;page-break-before:always}
-.page-summary{
-padding:6mm 5.5mm 5mm;display:flex;flex-direction:column;gap:2.8mm;
-box-sizing:border-box
-}
-.sum-brand{font-size:11pt;font-weight:800;letter-spacing:-.02em}
-.sum-title{font-size:18pt;font-weight:800;letter-spacing:-.03em;line-height:1.1}
-.sum-meta{font-size:9pt;font-weight:700;color:#333}
-.sum-stats{display:flex;flex-direction:column;gap:2.2mm}
-.sum-total{
-display:flex;align-items:baseline;justify-content:center;gap:2.5mm;
-padding:3.5mm 2.5mm;border:2.2pt solid #111;border-radius:2mm;text-align:center
-}
-.sum-total-label{font-size:12pt;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
-.sum-total-num{font-size:30pt;font-weight:800;letter-spacing:-.04em;line-height:1}
-.sum-total-unit{font-size:13pt;font-weight:800}
-.sum-list{
-list-style:none;flex:1;min-height:0;overflow:hidden;
-display:flex;flex-direction:column;justify-content:flex-start;gap:2mm;
-padding-top:1mm
-}
-.sum-list li{
-display:grid;grid-template-columns:16mm 1fr auto;align-items:center;gap:2.5mm;
-padding:2.4mm 1.5mm;border-bottom:1pt solid #ccc
-}
-.sum-list .sum-qty{font-size:22pt;font-weight:800;letter-spacing:-.03em;line-height:1;text-align:right}
-.sum-list .sum-name{font-size:13pt;font-weight:800;letter-spacing:-.02em;min-width:0;word-break:break-word;line-height:1.15}
-.sum-list .sum-size{
-font-size:11pt;font-weight:800;white-space:nowrap;
-padding:1.4mm 2.4mm;border:1.4pt solid #111;border-radius:1.2mm
-}
-.sum-list .sum-empty{display:block;text-align:center;color:#666;font-size:11pt;border:0}
-.sum-mid .sum-title{font-size:16pt}
-.sum-mid .sum-total-num{font-size:26pt}
-.sum-mid .sum-total-label{font-size:11pt}
-.sum-mid .sum-total-unit{font-size:12pt}
-.sum-mid .sum-list{gap:1.5mm}
-.sum-mid .sum-list li{padding:1.8mm 1.2mm}
-.sum-mid .sum-list .sum-qty{font-size:18pt}
-.sum-mid .sum-list .sum-name{font-size:11.5pt}
-.sum-mid .sum-list .sum-size{font-size:10pt;padding:1.2mm 2mm}
-.sum-dense .sum-title{font-size:14pt}
-.sum-dense .sum-total{padding:2.5mm 2mm}
-.sum-dense .sum-total-num{font-size:22pt}
-.sum-dense .sum-total-label{font-size:10pt}
-.sum-dense .sum-total-unit{font-size:11pt}
-.sum-dense .sum-list{gap:1.2mm}
-.sum-dense .sum-list li{padding:1.4mm 1mm;gap:2mm;grid-template-columns:14mm 1fr auto}
-.sum-dense .sum-list .sum-qty{font-size:16pt}
-.sum-dense .sum-list .sum-name{font-size:10.5pt}
-.sum-dense .sum-list .sum-size{font-size:9pt;padding:1mm 1.6mm}
 .slip{
 position:absolute;left:0;right:0;width:105mm;height:73mm;
 padding:2.5mm 4.5mm 2mm;
