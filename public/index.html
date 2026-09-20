@@ -115,22 +115,20 @@
           </div>
         </div>
         <div class="done-pager hidden" id="done-pager" aria-label="Phân trang đã giao">
-          <button type="button" class="done-pager-btn" id="done-pager-prev" aria-label="Trang trước">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-            </svg>
-            <span>Trước</span>
-          </button>
-          <div class="done-pager-info-wrap">
-            <span class="done-pager-page" id="done-pager-page">Trang 1 / 1</span>
-            <span class="done-pager-info" id="done-pager-info"></span>
+          <div class="done-pager-inner">
+            <button type="button" class="done-pager-nav" id="done-pager-prev" aria-label="Trang trước">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <div class="done-pager-pages" id="done-pager-pages"></div>
+            <button type="button" class="done-pager-nav" id="done-pager-next" aria-label="Trang sau">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
           </div>
-          <button type="button" class="done-pager-btn" id="done-pager-next" aria-label="Trang sau">
-            <span>Sau</span>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-            </svg>
-          </button>
+          <p class="done-pager-info" id="done-pager-info"></p>
         </div>
       </section>
 
@@ -615,14 +613,21 @@
         </header>
         <p class="delivered-list-meta" id="delivered-list-meta"></p>
         <div class="delivered-list" id="delivered-list"></div>
-        <div class="delivered-list-pager hidden" id="delivered-list-pager">
-          <button type="button" class="btn ghost" id="delivered-list-prev" aria-label="Trang trước">
-            Trước
-          </button>
-          <span class="delivered-list-page" id="delivered-list-page">1 / 1</span>
-          <button type="button" class="btn ghost" id="delivered-list-next" aria-label="Trang sau">
-            Sau
-          </button>
+        <div class="done-pager delivered-list-pager hidden" id="delivered-list-pager">
+          <div class="done-pager-inner">
+            <button type="button" class="done-pager-nav" id="delivered-list-prev" aria-label="Trang trước">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <div class="done-pager-pages" id="delivered-list-pages"></div>
+            <button type="button" class="done-pager-nav" id="delivered-list-next" aria-label="Trang sau">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+          </div>
+          <p class="done-pager-info" id="delivered-list-page"></p>
         </div>
         <button type="button" class="btn primary full" data-close-delivered-list>
           Đóng

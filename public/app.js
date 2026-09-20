@@ -48,7 +48,7 @@ let doneOrdersLoadPromise = null;
 let statsPayload = null;
 /** Cache key of current statsPayload */
 let statsPayloadKey = "";
-const STATS_MODAL_PAGE_SIZE = 20;
+const STATS_MODAL_PAGE_SIZE = 15;
 /** @type {any[]} */
 let statsModalOrders = [];
 /** @type {'delivered'|'received'} */
@@ -80,7 +80,7 @@ let orderFilter = "pending";
 /** Lọc hôm nay trong tab đã giao */
 let doneTodayFilter = false;
 /** Phân trang tab Đã giao */
-const DONE_PAGE_SIZE = 20;
+const DONE_PAGE_SIZE = 15;
 let donePage = 1;
 let doneTotalPages = 1;
 /** Chuỗi tìm đơn theo tên khách (đã trim) */
@@ -759,7 +759,7 @@ function paintStatsOrdersModalPage() {
   if (pageEl) {
     const from = (statsModalPage - 1) * STATS_MODAL_PAGE_SIZE + 1;
     const to = Math.min(statsModalTotal, from + pageOrders.length - 1);
-    pageEl.textContent = `${statsModalPage} / ${statsModalTotalPages} · ${from}–${to}`;
+    pageEl.textContent = `${from}–${to} / ${statsModalTotal} đơn`;
   }
   if (prevBtn instanceof HTMLButtonElement) {
     prevBtn.disabled = statsModalPage <= 1;
@@ -767,6 +767,54 @@ function paintStatsOrdersModalPage() {
   if (nextBtn instanceof HTMLButtonElement) {
     nextBtn.disabled = statsModalPage >= statsModalTotalPages;
   }
+
+  // Render page number buttons
+  const pagesEl = $("delivered-list-pages");
+  if (!pagesEl) return;
+  pagesEl.innerHTML = "";
+
+  const total = statsModalTotalPages;
+  const cur = statsModalPage;
+
+  const buildBtn = (n, label) =>
+    `<button type="button" class="done-pager-dot${n === cur ? " active" : ""}" data-goto="${n}" aria-label="Trang ${label}" aria-current="${n === cur ? "page" : "false"}">${label}</button>`;
+  const buildEllipsis = () =>
+    `<span class="done-pager-ellipsis" aria-hidden="true">…</span>`;
+
+  let html = "";
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) html += buildBtn(i, i);
+  } else if (cur <= 4) {
+    html += buildBtn(1, 1);
+    for (let i = 2; i <= 5; i++) html += buildBtn(i, i);
+    html += buildEllipsis();
+    html += buildBtn(total, total);
+  } else if (cur >= total - 3) {
+    html += buildBtn(1, 1);
+    html += buildEllipsis();
+    for (let i = total - 4; i <= total; i++) html += buildBtn(i, i);
+  } else {
+    html += buildBtn(1, 1);
+    html += buildEllipsis();
+    html += buildBtn(cur - 1, cur - 1);
+    html += buildBtn(cur, cur);
+    html += buildBtn(cur + 1, cur + 1);
+    html += buildEllipsis();
+    html += buildBtn(total, total);
+  }
+
+  pagesEl.innerHTML = html;
+
+  pagesEl.querySelectorAll(".done-pager-dot[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = Number(btn.dataset.goto);
+      if (target !== cur && target >= 1 && target <= total) {
+        loadStatsOrdersModalPage(target).catch((err) =>
+          toast(err.message || "Không tải được trang"),
+        );
+      }
+    });
+  });
 }
 
 function closeDeliveredListModal() {
@@ -2168,14 +2216,71 @@ function paintDonePager() {
   const show = isDoneTab && doneTotalPages > 1;
   pager.classList.toggle("hidden", !show);
   if (!show) return;
+
   const from = (donePage - 1) * DONE_PAGE_SIZE + 1;
   const to = Math.min(totalItems, donePage * DONE_PAGE_SIZE);
-  $("done-pager-info").textContent = `${from}–${to} / ${totalItems}`;
-  $("done-pager-page").textContent = `Trang ${donePage} / ${doneTotalPages}`;
+  $("done-pager-info").textContent = `${from}–${to} / ${totalItems} đơn`;
+
   const prevBtn = $("done-pager-prev");
   const nextBtn = $("done-pager-next");
   if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = donePage <= 1;
   if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = donePage >= doneTotalPages;
+
+  // Render page number buttons
+  const pagesEl = $("done-pager-pages");
+  if (!pagesEl) return;
+  pagesEl.innerHTML = "";
+
+  const total = doneTotalPages;
+  const cur = donePage;
+
+  /** Returns the button HTML string for a page number or ellipsis */
+  const buildBtn = (n, label) =>
+    `<button type="button" class="done-pager-dot${n === cur ? " active" : ""}" data-goto="${n}" aria-label="Trang ${label}" aria-current="${n === cur ? "page" : "false"}">${label}</button>`;
+
+  const buildEllipsis = () =>
+    `<span class="done-pager-ellipsis" aria-hidden="true">…</span>`;
+
+  let html = "";
+
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) html += buildBtn(i, i);
+  } else {
+    // Always show 1
+    html += buildBtn(1, 1);
+
+    if (cur <= 4) {
+      // Near start: show 2,3,4,5, ellipsis, last
+      for (let i = 2; i <= 5; i++) html += buildBtn(i, i);
+      html += buildEllipsis();
+      html += buildBtn(total, total);
+    } else if (cur >= total - 3) {
+      // Near end: show ellipsis, then 4 pages before last
+      html += buildEllipsis();
+      for (let i = total - 4; i <= total; i++) html += buildBtn(i, i);
+    } else {
+      // Middle: ellipsis, cur-1, cur, cur+1, ellipsis, last
+      html += buildEllipsis();
+      html += buildBtn(cur - 1, cur - 1);
+      html += buildBtn(cur, cur);
+      html += buildBtn(cur + 1, cur + 1);
+      html += buildEllipsis();
+      html += buildBtn(total, total);
+    }
+  }
+
+  pagesEl.innerHTML = html;
+
+  // Attach click handlers to generated page buttons
+  pagesEl.querySelectorAll(".done-pager-dot[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = Number(btn.dataset.goto);
+      if (target !== cur && target >= 1 && target <= total) {
+        donePage = target;
+        paintOrdersBoard();
+      }
+    });
+  });
 }
 
 async function setOrderStatus(id, status, opts = {}) {
