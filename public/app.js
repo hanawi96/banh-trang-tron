@@ -77,6 +77,12 @@ let statsPickFrom = "";
 let statsPickTo = "";
 /** @type {'pending'|'done'|'all'} — pending filter = chưa giao (pending|printed) */
 let orderFilter = "pending";
+/** Lọc hôm nay trong tab đã giao */
+let doneTodayFilter = false;
+/** Phân trang tab Đã giao */
+const DONE_PAGE_SIZE = 20;
+let donePage = 1;
+let doneTotalPages = 1;
 /** Chuỗi tìm đơn theo tên khách (đã trim) */
 let orderSearchQuery = "";
 let orderSearchRaf = 0;
@@ -241,6 +247,12 @@ function vnDayKey(ts = Date.now()) {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(ts));
+}
+
+/** Kiểm tra order có delivered_at vào ngày hôm nay (theo giờ VN) */
+function isDeliveredToday(order) {
+  if (!order.delivered_at) return false;
+  return vnDayKey(Number(order.delivered_at)) === vnDayKey();
 }
 
 function readProductCache() {
@@ -1198,8 +1210,9 @@ function openVisibleIds() {
 
 function doneVisibleIds() {
   const q = foldVn(orderSearchQuery);
-  return doneOrdersCache
-    .filter((o) => normalizeStatus(o.status) === "done")
+  let base = doneOrdersCache.filter((o) => normalizeStatus(o.status) === "done");
+  if (doneTodayFilter) base = base.filter(isDeliveredToday);
+  return base
     .filter((o) => (q ? true : matchesOrderFilter(o.status)))
     .filter((o) => matchesCustomerSearch(o, q))
     .map((o) => o.id);
@@ -1340,10 +1353,16 @@ function updateBulkBar() {
   const selectAllBtn = $("bulk-select-all");
   const countEl = $("bulk-selected-count");
   const servingsEl = $("bulk-servings-summary");
+  const prepareRow = document.querySelector(".prepare-row");
   if (!bulk || !countEl) return;
 
   const isDoneTab = orderFilter === "done";
   const visibleIds = isDoneTab ? doneVisibleIds() : openVisibleIds();
+  
+  // Ẩn/hiện prepare-row tùy theo tab
+  if (prepareRow) {
+    prepareRow.classList.toggle("done-tab-hidden", isDoneTab);
+  }
   
   for (const id of [...selectedOrderIds]) {
     if (!visibleIds.includes(id)) selectedOrderIds.delete(id);
@@ -1371,7 +1390,7 @@ function updateBulkBar() {
           <input type="checkbox" id="bulk-select-all-checkbox" />
           <span>Chọn tất cả</span>
         </label>
-        <button type="button" class="btn primary" id="bulk-unpaid">Đã thanh toán</button>
+        <button type="button" class="btn primary" id="bulk-unpaid">Đã CK</button>
         <button type="button" class="btn danger icon-only sm" id="bulk-delete" title="Xóa">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
             <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -1876,7 +1895,15 @@ function boardOrdersForFilter() {
     );
     return [...open, ...done];
   }
-  if (orderFilter === "done") return doneOrdersCache;
+  if (orderFilter === "done") {
+    const base = doneTodayFilter
+      ? doneOrdersCache.filter(isDeliveredToday)
+      : doneOrdersCache;
+    doneTotalPages = Math.max(1, Math.ceil(base.length / DONE_PAGE_SIZE));
+    donePage = Math.min(Math.max(1, donePage), doneTotalPages);
+    const start = (donePage - 1) * DONE_PAGE_SIZE;
+    return base.slice(start, start + DONE_PAGE_SIZE);
+  }
   if (orderFilter === "pending") {
     return ordersCache.filter((o) => isOpenStatus(o.status));
   }
@@ -1927,7 +1954,7 @@ function paintOrdersBoard() {
         : orderFilter === "pending"
           ? "Không còn đơn chưa giao."
           : orderFilter === "done"
-            ? "Chưa có đơn đã giao."
+            ? `Chưa có đơn đã giao${doneTodayFilter ? " hôm nay" : ""}.`
             : "Chưa có đơn cần giao."
     }</p>`;
     return;
@@ -2078,7 +2105,7 @@ function paintOrdersBoard() {
           <div class="order-badges">
             <span class="order-status order-status-${status}">${statusText}</span>
             ${villageBadge}
-            ${isPaid ? `<button type="button" class="order-paid-badge" data-unmark-paid="${escapeHtml(o.id)}" title="Click để hủy đánh dấu thanh toán">Đã thanh toán</button>` : ""}
+            ${isPaid ? `<button type="button" class="order-paid-badge" data-unmark-paid="${escapeHtml(o.id)}" title="Click để hủy đánh dấu thanh toán">Đã CK</button>` : ""}
             ${
               whenText
                 ? `<span class="order-slot order-slot-${slot || "none"}">${escapeHtml(whenText)}</span>`
@@ -2107,7 +2134,7 @@ function paintOrdersBoard() {
           ${quickDeliverBtn}
           ${
             status === "done" && !isPaid
-              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">Đã thanh toán</button>`
+              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">Đã CK</button>`
               : ""
           }
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
@@ -2126,6 +2153,29 @@ function paintOrdersBoard() {
   }
   ordersEl.replaceChildren(frag);
   updateBulkBar();
+  paintDonePager();
+}
+
+function paintDonePager() {
+  const pager = $("done-pager");
+  if (!pager) return;
+  const isDoneTab = orderFilter === "done";
+  const totalItems = isDoneTab
+    ? doneTodayFilter
+      ? doneOrdersCache.filter(isDeliveredToday).length
+      : doneOrdersCache.length
+    : 0;
+  const show = isDoneTab && doneTotalPages > 1;
+  pager.classList.toggle("hidden", !show);
+  if (!show) return;
+  const from = (donePage - 1) * DONE_PAGE_SIZE + 1;
+  const to = Math.min(totalItems, donePage * DONE_PAGE_SIZE);
+  $("done-pager-info").textContent = `${from}–${to} / ${totalItems}`;
+  $("done-pager-page").textContent = `Trang ${donePage} / ${doneTotalPages}`;
+  const prevBtn = $("done-pager-prev");
+  const nextBtn = $("done-pager-next");
+  if (prevBtn instanceof HTMLButtonElement) prevBtn.disabled = donePage <= 1;
+  if (nextBtn instanceof HTMLButtonElement) nextBtn.disabled = donePage >= doneTotalPages;
 }
 
 async function setOrderStatus(id, status, opts = {}) {
@@ -2456,6 +2506,8 @@ function setTab(tab, { fromUrl = false } = {}) {
     selectedOrderIds.clear();
     updateBulkBar();
   }
+  // Show/hide done-today filter row based on current tab
+  $("done-filter-row")?.classList.toggle("visible", tab === "orders" && orderFilter === "done");
   if (!fromUrl) syncTabHash(tab);
   // Only refetch when user switches into the tab (not when already there)
   if (same && prev === tab) return;
@@ -3036,6 +3088,7 @@ async function loadDoneOrders() {
         status: normalizeStatus(o.status),
       })),
     );
+    donePage = 1;
     paintOrdersBoard();
   })().finally(() => {
     doneOrdersLoadPromise = null;
@@ -3469,9 +3522,49 @@ document.querySelector("#tab-orders .order-filters")?.addEventListener("click", 
   if (!btn) return;
   const next = btn.getAttribute("data-order-filter");
   if (next !== "pending" && next !== "done" && next !== "all") return;
+  
+  const prevFilter = orderFilter;
   orderFilter = next;
   if (next === "done") selectedOrderIds.clear();
+  
+  // Reset phân trang khi chuyển tab
+  if (next !== "done") {
+    doneTodayFilter = false;
+    const cb = $("done-today-filter");
+    if (cb) cb.checked = false;
+  }
+  donePage = 1;
+
+  // Hiện/ẩn row filter hôm nay
+  $("done-filter-row")?.classList.toggle("visible", next === "done");
   paintOrdersBoard();
+});
+
+// Toggle filter hôm nay cho tab đã giao (dùng checkbox)
+$("done-today-filter")?.addEventListener("change", () => {
+  if (orderFilter !== "done") {
+    orderFilter = "done";
+    selectedOrderIds.clear();
+  }
+  doneTodayFilter = $("done-today-filter").checked;
+  donePage = 1;
+  paintOrdersBoard();
+});
+
+$("done-pager-prev")?.addEventListener("click", () => {
+  if (donePage > 1) {
+    donePage--;
+    paintOrdersBoard();
+    ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+
+$("done-pager-next")?.addEventListener("click", () => {
+  if (donePage < doneTotalPages) {
+    donePage++;
+    paintOrdersBoard();
+    ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 });
 
 function syncOrderSearchClear() {
@@ -3485,6 +3578,7 @@ function scheduleOrderSearchPaint() {
   if (orderSearchRaf) cancelAnimationFrame(orderSearchRaf);
   orderSearchRaf = requestAnimationFrame(() => {
     orderSearchRaf = 0;
+    donePage = 1;
     paintOrdersBoard();
   });
 }
