@@ -1196,6 +1196,15 @@ function openVisibleIds() {
     .map((o) => o.id);
 }
 
+function doneVisibleIds() {
+  const q = foldVn(orderSearchQuery);
+  return doneOrdersCache
+    .filter((o) => normalizeStatus(o.status) === "done")
+    .filter((o) => (q ? true : matchesOrderFilter(o.status)))
+    .filter((o) => matchesCustomerSearch(o, q))
+    .map((o) => o.id);
+}
+
 /** Thanh bánh tráng / suất theo size */
 const BARS_PER_NHO = 2.5;
 const BARS_PER_TO = 5;
@@ -1331,24 +1340,63 @@ function updateBulkBar() {
   const selectAllBtn = $("bulk-select-all");
   const countEl = $("bulk-selected-count");
   const servingsEl = $("bulk-servings-summary");
-  if (!bulk || !selectAllBtn || !countEl) return;
+  if (!bulk || !countEl) return;
 
-  const openIds = openVisibleIds();
+  const isDoneTab = orderFilter === "done";
+  const visibleIds = isDoneTab ? doneVisibleIds() : openVisibleIds();
+  
   for (const id of [...selectedOrderIds]) {
-    if (!openIds.includes(id)) selectedOrderIds.delete(id);
+    if (!visibleIds.includes(id)) selectedOrderIds.delete(id);
   }
 
   const n = selectedOrderIds.size;
-  const show = n > 0 && orderFilter !== "done";
+  const show = n > 0;
   bulk.classList.toggle("hidden", !show);
   bulk.setAttribute("aria-hidden", show ? "false" : "true");
   document.body.classList.toggle("bulk-open", show);
   countEl.textContent = String(n);
-  selectAllBtn.textContent =
-    n > 0 && n === openIds.length ? "Bỏ chọn" : "Chọn hết";
+  
+  // Cập nhật text cho button "Chọn hết" (tab Chưa giao) hoặc state checkbox (tab Đã giao)
+  if (selectAllBtn) {
+    selectAllBtn.textContent = n > 0 && n === visibleIds.length ? "Bỏ chọn" : "Chọn hết";
+  }
+
+  // Cập nhật các button tùy theo tab
+  const actionsWrap = bulk.querySelector(".order-bulk-actions");
+  if (actionsWrap) {
+    if (isDoneTab) {
+      actionsWrap.innerHTML = `
+        <label class="bulk-select-all-label">
+          <input type="checkbox" id="bulk-select-all-checkbox" />
+          <span>Tất cả</span>
+        </label>
+        <button type="button" class="btn ghost lg" id="bulk-undo-deliver">Hoàn tác giao</button>
+        <button type="button" class="btn ghost lg" id="bulk-unpaid">Hủy thanh toán</button>
+        <button type="button" class="btn danger icon-only sm" id="bulk-delete" title="Xóa">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+          </svg>
+        </button>
+      `;
+      
+      // Cập nhật checkbox state
+      const checkbox = $("bulk-select-all-checkbox");
+      if (checkbox) {
+        checkbox.checked = n > 0 && n === visibleIds.length;
+        checkbox.indeterminate = n > 0 && n < visibleIds.length;
+      }
+    } else {
+      actionsWrap.innerHTML = `
+        <button type="button" class="btn ghost" id="bulk-select-all">Chọn hết</button>
+        <button type="button" class="btn ghost" id="bulk-export-pdf">In</button>
+        <button type="button" class="btn primary" id="bulk-deliver">Đã giao</button>
+        <button type="button" class="btn danger" id="bulk-delete">Xóa</button>
+      `;
+    }
+  }
 
   if (servingsEl) {
-    if (!show) {
+    if (!show || isDoneTab) {
       servingsEl.hidden = true;
       servingsEl.textContent = "";
     } else {
@@ -2040,6 +2088,8 @@ function paintOrdersBoard() {
         : "";
     const printedAtText = formatVnDateTime(o.printed_at);
     const deliveredAtText = formatVnDateTime(o.delivered_at);
+    const paidAtText = formatVnDateTime(o.paid_at);
+    const isPaid = Number(o.paid_at) > 0;
     const sameStamp =
       printedAtText &&
       deliveredAtText &&
@@ -2047,8 +2097,12 @@ function paintOrdersBoard() {
       Number(o.delivered_at) > 0 &&
       Math.abs(Number(o.printed_at) - Number(o.delivered_at)) < 2000;
     const timelineHtml = sameStamp
-      ? `<div class="order-timeline"><span class="order-timeline-item"><em>In/Giao</em> ${escapeHtml(printedAtText)}</span></div>`
-      : printedAtText || deliveredAtText
+      ? `<div class="order-timeline"><span class="order-timeline-item"><em>In/Giao</em> ${escapeHtml(printedAtText)}</span>${
+          paidAtText
+            ? `<span class="order-timeline-item order-paid"><em>Thanh toán</em> ${escapeHtml(paidAtText)}</span>`
+            : ""
+        }</div>`
+      : printedAtText || deliveredAtText || paidAtText
         ? `<div class="order-timeline">${
             printedAtText
               ? `<span class="order-timeline-item"><em>In</em> ${escapeHtml(printedAtText)}</span>`
@@ -2057,23 +2111,24 @@ function paintOrdersBoard() {
             deliveredAtText
               ? `<span class="order-timeline-item"><em>Giao</em> ${escapeHtml(deliveredAtText)}</span>`
               : ""
+          }${
+            paidAtText
+              ? `<span class="order-timeline-item order-paid"><em>Thanh toán</em> ${escapeHtml(paidAtText)}</span>`
+              : ""
           }</div>`
         : "";
     el.innerHTML = `
       <header class="order-head">
         <div class="order-head-left">
-          ${
-            isOpenStatus(status)
-              ? `<label class="order-check">
-                  <input type="checkbox" data-select-order="${escapeHtml(o.id)}" ${checked} />
-                  <span></span>
-                </label>`
-              : ""
-          }
+          <label class="order-check">
+            <input type="checkbox" data-select-order="${escapeHtml(o.id)}" ${checked} />
+            <span></span>
+          </label>
           <span class="time" title="Giờ nhận đơn">${timeFmt.format(o.created_at)}</span>
           <div class="order-badges">
             <span class="order-status order-status-${status}">${statusText}</span>
             ${villageBadge}
+            ${isPaid ? `<button type="button" class="order-paid-badge" data-unmark-paid="${escapeHtml(o.id)}" title="Click để hủy đánh dấu thanh toán">Đã thanh toán</button>` : ""}
             ${
               whenText
                 ? `<span class="order-slot order-slot-${slot || "none"}">${escapeHtml(whenText)}</span>`
@@ -2095,11 +2150,16 @@ function paintOrdersBoard() {
         ${timelineHtml}
       </div>
       <div class="order-actions-wrap">
-        <div class="order-actions${status === "pending" ? " order-actions-pending" : ""}">
+        <div class="order-actions${status === "pending" ? " order-actions-pending" : ""}${status === "done" && !isPaid ? " order-actions-done" : ""}${status === "done" && isPaid ? " order-actions-done-paid" : ""}">
           <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}">
             ${actionBtn}
           </button>
           ${quickDeliverBtn}
+          ${
+            status === "done" && !isPaid
+              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">Đã thanh toán</button>`
+              : ""
+          }
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
             ${EDIT_ICON}
           </button>
@@ -2228,6 +2288,62 @@ async function deleteOrders(ids) {
   }
 }
 
+async function markOrderPaid(id) {
+  const order = findOrder(id);
+  if (!order) return;
+  const snapshot = order.paid_at;
+  order.paid_at = Date.now();
+  syncDoneOrdersCache(order);
+  paintOrdersBoard();
+
+  try {
+    const data = await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
+      method: "PATCH",
+      body: JSON.stringify({ paid: true }),
+    });
+    if (data && "paid_at" in data) order.paid_at = data.paid_at;
+    syncDoneOrdersCache(order);
+    paintOrdersBoard();
+    toast("Đã đánh dấu thanh toán");
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
+  } catch (err) {
+    order.paid_at = snapshot;
+    syncDoneOrdersCache(order);
+    paintOrdersBoard();
+    toast(err.message || "Không cập nhật được");
+  }
+}
+
+async function unmarkOrderPaid(id) {
+  const order = findOrder(id);
+  if (!order) return;
+  const snapshot = order.paid_at;
+  order.paid_at = 0;
+  syncDoneOrdersCache(order);
+  paintOrdersBoard();
+
+  try {
+    const data = await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
+      method: "PATCH",
+      body: JSON.stringify({ paid: false }),
+    });
+    if (data && "paid_at" in data) order.paid_at = data.paid_at;
+    syncDoneOrdersCache(order);
+    paintOrdersBoard();
+    toast("Đã hủy đánh dấu thanh toán");
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
+  } catch (err) {
+    order.paid_at = snapshot;
+    syncDoneOrdersCache(order);
+    paintOrdersBoard();
+    toast(err.message || "Không cập nhật được");
+  }
+}
+
 /**
  * @param {string[]} ids
  * @param {string} status
@@ -2298,6 +2414,59 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       o.delivered_at = s.delivered_at;
       syncDoneOrdersCache(o);
       ensureOrderOnBoard(o);
+    }
+    paintOrdersBoard();
+    toast(err.message || "Không cập nhật được");
+  }
+}
+
+/**
+ * @param {string[]} ids
+ * @param {boolean} paid
+ * @param {{ silent?: boolean }} [opts]
+ */
+async function setOrdersPaidBulk(ids, paid, opts = {}) {
+  const targets = ids
+    .map((id) => findOrder(id))
+    .filter((o) => o && Boolean(o.paid_at) !== paid);
+  if (!targets.length) return;
+
+  const snapshot = targets.map((o) => ({
+    id: o.id,
+    paid_at: o.paid_at ?? null,
+  }));
+
+  const paid_at = paid ? Date.now() : null;
+  for (const o of targets) {
+    o.paid_at = paid_at;
+    syncDoneOrdersCache(o);
+    const idx = ordersCache.findIndex((x) => x.id === o.id);
+    if (idx >= 0) ordersCache[idx] = o;
+  }
+  paintOrdersBoard();
+
+  try {
+    await api("/api/orders/paid-bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        ids: targets.map((o) => o.id),
+        paid,
+      }),
+    });
+    if (!opts.silent) {
+      toast(paid ? `Đã đánh dấu ${targets.length} đơn đã thanh toán` : `Đã hủy thanh toán ${targets.length} đơn`);
+    }
+    if (!$("tab-stats")?.classList.contains("hidden")) {
+      loadStats().catch(() => {});
+    }
+  } catch (err) {
+    for (const s of snapshot) {
+      const o = findOrder(s.id);
+      if (!o) continue;
+      o.paid_at = s.paid_at;
+      syncDoneOrdersCache(o);
+      const idx = ordersCache.findIndex((x) => x.id === o.id);
+      if (idx >= 0) ordersCache[idx] = o;
     }
     paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
@@ -3389,6 +3558,88 @@ $("order-search-clear")?.addEventListener("click", () => {
   paintOrdersBoard();
 });
 
+$("order-bulk")?.addEventListener("click", (e) => {
+  const target = e.target;
+  
+  // Chọn hết / Bỏ chọn (button hoặc checkbox)
+  if (target.id === "bulk-select-all" || target.closest("#bulk-select-all") ||
+      target.id === "bulk-select-all-checkbox" || target.closest(".bulk-select-all-label")) {
+    const isDoneTab = orderFilter === "done";
+    const visibleIds = isDoneTab ? doneVisibleIds() : openVisibleIds();
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedOrderIds.has(id));
+    if (allSelected) {
+      selectedOrderIds.clear();
+    } else {
+      for (const id of visibleIds) selectedOrderIds.add(id);
+    }
+    paintOrdersBoard();
+  }
+  
+  // In phiếu
+  if (target.id === "bulk-export-pdf" || target.closest("#bulk-export-pdf")) {
+    const ids = [...selectedOrderIds];
+    if (!ids.length) {
+      toast("Chọn ít nhất 1 đơn để in");
+      return;
+    }
+    openPrintConfirm(ids);
+  }
+  
+  // Đã giao (cho đơn chưa giao)
+  if (target.id === "bulk-deliver" || target.closest("#bulk-deliver")) {
+    const ids = [...selectedOrderIds];
+    if (!ids.length) return;
+    const openIds = ids.filter((id) => {
+      const o = findOrder(id);
+      return o && isOpenStatus(o.status);
+    });
+    if (!openIds.length) {
+      toast("Không có đơn chưa giao trong lựa chọn");
+      return;
+    }
+    openDeliverConfirm(openIds);
+  }
+  
+  // Hoàn tác giao (cho đơn đã giao)
+  if (target.id === "bulk-undo-deliver" || target.closest("#bulk-undo-deliver")) {
+    const ids = [...selectedOrderIds];
+    if (!ids.length) return;
+    const doneIds = ids.filter((id) => {
+      const o = doneOrdersCache.find(x => x.id === id);
+      return o && normalizeStatus(o.status) === "done";
+    });
+    if (!doneIds.length) {
+      toast("Không có đơn đã giao trong lựa chọn");
+      return;
+    }
+    bulkUndoDeliver(doneIds);
+  }
+  
+  // Hủy thanh toán hàng loạt (cho đơn đã giao)
+  if (target.id === "bulk-unpaid" || target.closest("#bulk-unpaid")) {
+    const ids = [...selectedOrderIds];
+    if (!ids.length) return;
+    const paidIds = ids.filter((id) => {
+      const o = doneOrdersCache.find(x => x.id === id);
+      return o && Number(o.paid_at) > 0;
+    });
+    if (!paidIds.length) {
+      toast("Không có đơn đã thanh toán trong lựa chọn");
+      return;
+    }
+    bulkUnpaid(paidIds);
+  }
+  
+  // Xóa hàng loạt
+  if (target.id === "bulk-delete" || target.closest("#bulk-delete")) {
+    const ids = [...selectedOrderIds];
+    if (!ids.length) return;
+    openDeleteOrderModal(ids);
+  }
+});
+
+// Giữ lại event listener cũ cho backwards compatibility
 $("bulk-select-all")?.addEventListener("click", () => {
   const openIds = openVisibleIds();
   const allSelected =
@@ -3462,6 +3713,34 @@ function closeDeliverConfirm() {
   deliverConfirmModal?.setAttribute("aria-hidden", "true");
   document.body.classList.remove("confirm-open");
   lockBody(false);
+}
+
+/**
+ * Hoàn tác đã giao hàng loạt
+ * @param {string[]} ids
+ */
+async function bulkUndoDeliver(ids) {
+  if (!ids.length) return;
+  const confirmMsg = `Hoàn tác ${ids.length} đơn đã giao về trạng thái chưa giao?`;
+  if (!confirm(confirmMsg)) return;
+  
+  selectedOrderIds.clear();
+  await setOrdersStatusBulk(ids, "pending");
+  paintOrdersBoard();
+}
+
+/**
+ * Hủy thanh toán hàng loạt
+ * @param {string[]} ids
+ */
+async function bulkUnpaid(ids) {
+  if (!ids.length) return;
+  const confirmMsg = `Hủy thanh toán cho ${ids.length} đơn đã chọn?`;
+  if (!confirm(confirmMsg)) return;
+  
+  selectedOrderIds.clear();
+  await setOrdersPaidBulk(ids, false);
+  paintOrdersBoard();
 }
 
 $("confirm-deliver-order")?.addEventListener("click", () => {
@@ -3608,6 +3887,19 @@ ordersEl.addEventListener("click", (e) => {
   if (deleteBtn) {
     const id = deleteBtn.getAttribute("data-delete-order");
     if (id) openDeleteOrderModal([id]);
+    return;
+  }
+  const paidBtn = t.closest("[data-mark-paid]");
+  if (paidBtn) {
+    const id = paidBtn.getAttribute("data-mark-paid");
+    if (id) markOrderPaid(id);
+    return;
+  }
+  const unpaidBtn = t.closest("[data-unmark-paid]");
+  if (unpaidBtn) {
+    const id = unpaidBtn.getAttribute("data-unmark-paid");
+    if (id) unmarkOrderPaid(id);
+    return;
   }
 });
 

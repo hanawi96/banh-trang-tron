@@ -315,6 +315,61 @@ html.booting .tabbar {
   color: #fff;
 }
 
+.btn.icon-only {
+  padding: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn.icon-only svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.btn.icon-only.sm {
+  padding: 8px;
+}
+
+.btn.icon-only.sm svg {
+  width: 18px;
+  height: 18px;
+}
+
+.btn.lg {
+  padding: 14px 20px;
+  font-size: 1rem;
+}
+
+.bulk-select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.bulk-select-all-label:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.bulk-select-all-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.bulk-select-all-label span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .modal-sheet-sm {
   max-width: 440px;
 }
@@ -1337,6 +1392,57 @@ body.bulk-open .tabbar {
   color: #0a5f40;
 }
 
+.order-paid-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 750;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: #dbeafe;
+  color: #1e40af;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.order-paid-badge:hover {
+  background: #bfdbfe;
+  color: #1e3a8a;
+  transform: translateY(-1px);
+}
+
+.order-paid-badge:active {
+  transform: translateY(0);
+}
+
+.order-timeline-item.order-paid {
+  color: #1e40af;
+  font-weight: 700;
+}
+
+.order-paid-btn {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  font-weight: 750;
+  font-size: 0.92rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+}
+
+.order-paid-btn:active {
+  transform: scale(0.98);
+}
+
 .order-actions-wrap {
   display: grid;
   gap: 6px;
@@ -1351,6 +1457,14 @@ body.bulk-open .tabbar {
 
 .order-actions-pending {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px 42px 42px;
+}
+
+.order-actions-done {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px 42px 42px;
+}
+
+.order-actions-done-paid {
+  grid-template-columns: minmax(0, 1fr) 42px 42px 42px;
 }
 
 .order-status-btn {

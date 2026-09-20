@@ -656,7 +656,7 @@ app.get("/api/orders", async (c) => {
   let result;
   if (rangeKey === "done") {
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at
             FROM orders
             WHERE status = 'done'
             ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
@@ -667,7 +667,7 @@ app.get("/api/orders", async (c) => {
     const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
     const { start: createdStart, end: createdEnd } = todayRangeVn();
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at
             FROM orders
             WHERE
               (delivery_date >= ? AND delivery_date < ?)
@@ -699,7 +699,7 @@ app.get("/api/orders", async (c) => {
   } else {
     const { start, end } = rangeVn(rangeKey);
     result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, created_at
+      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at
             FROM orders
             WHERE created_at >= ? AND created_at < ?
             ORDER BY
@@ -729,6 +729,7 @@ app.get("/api/orders", async (c) => {
     status: parseOrderStatus(row.status),
     printed_at: parseTs(row.printed_at),
     delivered_at: parseTs(row.delivered_at),
+    paid_at: parseTs(row.paid_at),
     created_at: Number(row.created_at),
   }));
 
@@ -1014,6 +1015,52 @@ app.post("/api/orders/status-bulk", async (c) => {
   const { at } = await applyOrdersStatus(db, ids, status, { setPrinted });
 
   return c.json({ ok: true, status, ids, at, setPrinted });
+});
+
+app.patch("/api/orders/:id/paid", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json<{ paid?: boolean }>().catch(() => null);
+  const paid = Boolean(body?.paid);
+
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const existing = await db.execute({
+    sql: `SELECT id FROM orders WHERE id = ? LIMIT 1`,
+    args: [id],
+  });
+  if (!existing.rows.length) {
+    return c.json({ error: "Không tìm thấy đơn" }, 404);
+  }
+
+  const paid_at = paid ? nowMs() : null;
+  await db.execute({
+    sql: `UPDATE orders SET paid_at = ? WHERE id = ?`,
+    args: [paid_at, id],
+  });
+
+  return c.json({ ok: true, id, paid, paid_at });
+});
+
+app.post("/api/orders/paid-bulk", async (c) => {
+  const body = await c.req.json<{ ids?: string[]; paid?: boolean }>().catch(() => null);
+  const ids = Array.isArray(body?.ids)
+    ? [...new Set(body.ids.map((id) => String(id).slice(0, 64)).filter(Boolean))].slice(0, 100)
+    : [];
+  if (!ids.length) {
+    return c.json({ error: "Chưa chọn đơn" }, 400);
+  }
+  const paid = Boolean(body?.paid);
+
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const paid_at = paid ? nowMs() : null;
+  const placeholders = ids.map(() => "?").join(", ");
+  await db.execute({
+    sql: `UPDATE orders SET paid_at = ? WHERE id IN (${placeholders})`,
+    args: [paid_at, ...ids],
+  });
+
+  return c.json({ ok: true, ids, paid, paid_at });
 });
 
 app.delete("/api/orders/:id", async (c) => {

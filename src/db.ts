@@ -29,6 +29,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
         status TEXT NOT NULL DEFAULT 'pending',
         printed_at INTEGER,
         delivered_at INTEGER,
+        paid_at INTEGER,
         created_at INTEGER NOT NULL
       )`,
       `CREATE TABLE IF NOT EXISTS products (
@@ -58,6 +59,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
     "status TEXT NOT NULL DEFAULT 'pending'",
     "printed_at INTEGER",
     "delivered_at INTEGER",
+    "paid_at INTEGER",
     "village TEXT",
   ]) {
     try {
@@ -130,6 +132,7 @@ export type OrderRow = {
   status: string | null;
   printed_at: number | null;
   delivered_at: number | null;
+  paid_at: number | null;
   created_at: number;
 };
 
