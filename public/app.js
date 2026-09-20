@@ -1875,9 +1875,13 @@ function sortOrders(list) {
   });
 }
 
-/** Mới giao trước (delivered_at → printed_at → created_at) */
+/** Chưa thanh toán lên trước, đã CK xuống dưới; trong mỗi nhóm: mới giao trước (delivered_at → printed_at → created_at) */
 function sortDoneOrders(list) {
   return [...list].sort((a, b) => {
+    const aPaid = Number(a.paid_at) > 0 ? 1 : 0;
+    const bPaid = Number(b.paid_at) > 0 ? 1 : 0;
+    if (aPaid !== bPaid) return aPaid - bPaid;
+
     const ta =
       Number(a.delivered_at) ||
       Number(a.printed_at) ||
@@ -1938,8 +1942,10 @@ function boardOrdersForFilter() {
       ),
     );
     const openIds = new Set(open.map((o) => o.id));
-    const done = doneOrdersCache.filter(
-      (o) => !openIds.has(o.id) && matchesCustomerSearch(o, q),
+    const done = sortDoneOrders(
+      doneOrdersCache.filter(
+        (o) => !openIds.has(o.id) && matchesCustomerSearch(o, q),
+      ),
     );
     return [...open, ...done];
   }
