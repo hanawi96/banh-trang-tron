@@ -75,7 +75,7 @@ let statsCalMonthYmd = "";
 /** Draft selection in date modal */
 let statsPickFrom = "";
 let statsPickTo = "";
-/** @type {'pending'|'done'|'all'} — pending filter = chưa giao (pending|printed) */
+/** @type {'pending'|'done'} — pending = chưa giao (pending|printed) */
 let orderFilter = "pending";
 /** Lọc hôm nay trong tab đã giao */
 let doneTodayFilter = false;
@@ -356,7 +356,7 @@ function refreshOrdersIfDayChanged() {
   if (!ordersFetchedDay || ordersFetchedDay === vnDayKey()) return;
   ordersFetchedDay = "";
   loadOrders().catch(() => {});
-  if (orderFilter === "done" || orderFilter === "all") {
+  if (orderFilter === "done") {
     loadDoneOrders({ page: 1 }).catch(() => {});
   }
 }
@@ -459,13 +459,31 @@ function productUnitCost(product, size) {
     : Number(product.cost) || 0;
 }
 
+function emptyStatsHtml(label, detail) {
+  const bars = [42, 68, 30, 54, 36]
+    .map((h) => `<span style="--h:${h}%"></span>`)
+    .join("");
+  return `
+    <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao thành công · giờ VN</p>
+    <article class="stats-empty-card">
+      <div class="stats-empty-chart" aria-hidden="true">${bars}</div>
+      <h3>Chưa có số liệu</h3>
+      <p>${detail}</p>
+      <div class="stats-empty-metrics" aria-hidden="true">
+        <div><span>Doanh thu</span><strong>—</strong></div>
+        <div><span>Đã giao</span><strong>0</strong></div>
+        <div><span>Lãi ước tính</span><strong>—</strong></div>
+      </div>
+    </article>`;
+}
+
 function renderStats() {
   const root = $("stats");
   if (!root) return;
   const label = statsPeriodLabel();
   const s = statsPayload;
   if (!s) {
-    root.innerHTML = `<p class="empty">Chưa có dữ liệu thống kê.</p>`;
+    root.innerHTML = emptyStatsHtml(label, "Chưa có dữ liệu thống kê.");
     return;
   }
 
@@ -477,9 +495,10 @@ function renderStats() {
   const topProducts = Array.isArray(s.topProducts) ? s.topProducts : [];
 
   if (!deliveredCount && !receivedCount && !openCount) {
-    root.innerHTML = `
-      <p class="stats-kicker">${escapeHtml(label)} · theo ngày giao thành công · giờ VN</p>
-      <p class="empty">Chưa có đơn đã giao trong khoảng “${escapeHtml(label)}”.</p>`;
+    root.innerHTML = emptyStatsHtml(
+      label,
+      `Chưa có đơn đã giao trong khoảng “${escapeHtml(label)}”.`,
+    );
     return;
   }
 
@@ -1296,7 +1315,6 @@ function isOpenStatus(status) {
 
 function matchesOrderFilter(status, filter = orderFilter) {
   const s = normalizeStatus(status);
-  if (filter === "all") return true;
   if (filter === "done") return s === "done";
   // "Chưa giao" = chưa in + đã in (chưa mang đi)
   return isOpenStatus(s);
@@ -1886,18 +1904,15 @@ function updateOrderFilterCounts() {
   const openOrders = ordersCache.filter((o) => isOpenStatus(o.status));
   const open = serverOpenCount == null ? openOrders.length : serverOpenCount;
   const done = doneCount;
-  const all = open + done;
   let pendingRevenue = 0;
   for (const o of openOrders) {
     pendingRevenue += Number(o.total) || 0;
   }
   const countPending = $("count-pending");
   const countDone = $("count-done");
-  const countAll = $("count-all");
   const pendingRevEl = $("pending-revenue");
   if (countPending) countPending.textContent = String(open);
   if (countDone) countDone.textContent = String(done);
-  if (countAll) countAll.textContent = String(all);
   if (pendingRevEl) pendingRevEl.textContent = vnd.format(pendingRevenue);
   if (open > 0) {
     ordersBadge.textContent = String(open);
@@ -1983,7 +1998,7 @@ function syncDoneOrdersCache(order) {
   if (normalizeStatus(order.status) === "done") {
     ordersCache = ordersCache.filter((o) => o.id !== order.id);
     const showOnPage =
-      (orderFilter === "done" || orderFilter === "all") &&
+      orderFilter === "done" &&
       donePage === 1 &&
       (!doneTodayFilter || isDeliveredToday(order));
     if (showOnPage) {
@@ -2023,12 +2038,7 @@ function boardOrdersForFilter() {
   // Đang tìm → quét mọi trạng thái: chưa giao trước, đã giao sau
   if (q) return searchHits || [];
   if (orderFilter === "done") return doneOrdersCache;
-  if (orderFilter === "pending") {
-    return ordersCache.filter((o) => isOpenStatus(o.status));
-  }
-  const open = sortOrders(ordersCache.filter((o) => isOpenStatus(o.status)));
-  const openIds = new Set(open.map((o) => o.id));
-  return [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
+  return ordersCache.filter((o) => isOpenStatus(o.status));
 }
 
 function orderBoardSig(list) {
@@ -2060,7 +2070,7 @@ function renderOrders(orders) {
   if (ordersFetchedDay && ordersFetchedDay !== day) {
     ordersFetchedDay = "";
     loadOrders().catch(() => {});
-    if (orderFilter === "done" || orderFilter === "all") {
+    if (orderFilter === "done") {
       loadDoneOrders({ page: 1 }).catch(() => {});
     }
     return;
@@ -2130,11 +2140,9 @@ function paintOrdersBoard() {
     ordersEl.innerHTML = emptyOrdersHtml(
       searching
         ? `Không tìm thấy khách “${escapeHtml(orderSearchQuery.trim())}”.`
-        : orderFilter === "pending"
-          ? "Không còn đơn chưa giao."
-          : orderFilter === "done"
-            ? `Chưa có đơn đã giao${doneTodayFilter ? " hôm nay" : ""}.`
-            : "Chưa có đơn cần giao.",
+        : orderFilter === "done"
+          ? `Chưa có đơn đã giao${doneTodayFilter ? " hôm nay" : ""}.`
+          : "Không còn đơn chưa giao.",
     );
     paintDonePager();
     return;
@@ -2459,7 +2467,7 @@ async function setOrderStatus(id, status, opts = {}) {
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
-    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
       loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
     }
     if (!$("tab-stats")?.classList.contains("hidden")) {
@@ -2539,7 +2547,7 @@ async function deleteOrders(ids) {
     }
     toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
     loadProducts().catch(() => {});
-    if (orderFilter === "done" || orderFilter === "all") {
+    if (orderFilter === "done") {
       loadDoneOrders({ page: donePage }).catch(() => {});
     }
     if (!$("tab-stats")?.classList.contains("hidden")) {
@@ -2571,7 +2579,7 @@ async function markOrderPaid(id) {
     if (data && "paid_at" in data) order.paid_at = data.paid_at;
     syncDoneOrdersCache(order);
     paintOrdersBoard();
-    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
       loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
     }
     toast("Đã đánh dấu thanh toán");
@@ -2602,7 +2610,7 @@ async function unmarkOrderPaid(id) {
     if (data && "paid_at" in data) order.paid_at = data.paid_at;
     syncDoneOrdersCache(order);
     paintOrdersBoard();
-    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
       loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
     }
     toast("Đã hủy đánh dấu thanh toán");
@@ -2690,7 +2698,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       else if (next === "printed") toast(`Đã in ${targets.length} đơn`);
       else toast("Đã hoàn tác");
     }
-    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
       loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
     }
     if (!$("tab-stats")?.classList.contains("hidden")) {
@@ -2747,7 +2755,7 @@ async function setOrdersPaidBulk(ids, paid, opts = {}) {
         paid,
       }),
     });
-    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
       loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
     }
     if (!opts.silent) {
@@ -3403,7 +3411,7 @@ async function loadDoneOrders({ page = 1, today = doneTodayFilter } = {}) {
   } catch (err) {
     if (seq !== doneLoadSeq) return;
     doneLoading = false;
-    if (orderFilter === "done" || orderFilter === "all") paintOrdersBoard();
+    if (orderFilter === "done") paintOrdersBoard();
     throw err;
   }
 }
@@ -3739,7 +3747,7 @@ async function refreshData() {
       await Promise.all([loadProducts(), loadStats()]);
     } else if (tab === "orders") {
       const jobs = [loadOrders(), loadProducts()];
-      if (orderFilter === "done" || orderFilter === "all") {
+      if (orderFilter === "done") {
         jobs.push(loadDoneOrders({ page: donePage }));
       }
       await Promise.all(jobs);
@@ -3832,7 +3840,7 @@ document.querySelector("#tab-orders .order-filters")?.addEventListener("click", 
   const btn = e.target.closest("[data-order-filter]");
   if (!btn) return;
   const next = btn.getAttribute("data-order-filter");
-  if (next !== "pending" && next !== "done" && next !== "all") return;
+  if (next !== "pending" && next !== "done") return;
   
   const prevFilter = orderFilter;
   orderFilter = next;
