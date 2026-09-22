@@ -266,6 +266,73 @@ html.booting .tabbar {
   padding-right: 52px;
 }
 
+#menu {
+  gap: 10px;
+}
+
+#menu .product-group-head {
+  margin: 12px 2px 0;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  color: #0a5f40;
+}
+
+#menu .product-group-head:first-child {
+  margin-top: 0;
+}
+
+#menu .product-group-empty {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+#menu .product-manage {
+  padding: 12px;
+  border: 1px solid #e5efe9;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfefc 100%);
+  box-shadow: 0 8px 22px rgba(16, 35, 28, 0.045);
+}
+
+#menu .product-manage:hover {
+  box-shadow: 0 12px 28px rgba(16, 35, 28, 0.07);
+}
+
+#menu .product-thumb {
+  border-radius: 16px;
+}
+
+#menu .product-body {
+  gap: 5px;
+}
+
+#menu .product-body h3 {
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.28;
+  letter-spacing: -0.03em;
+  color: #12261e;
+}
+
+#menu .product-body .price {
+  font-size: 0.84rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: #3e6d59;
+}
+
+#menu .product-body .sold {
+  width: fit-content;
+  margin-top: 2px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e8f6ef;
+  color: #0a5f40;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
 .product:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 22px rgba(16, 35, 28, 0.08);
