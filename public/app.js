@@ -915,6 +915,14 @@ function lockBody(lock) {
   document.body.style.overflow = lock || anyModalOpen() ? "hidden" : "";
 }
 
+/** Viết hoa chữ cái đầu mỗi từ khi hiển thị, không đổi tên đã lưu. */
+function displayProductName(name) {
+  return String(name || "").replace(
+    /(^|\s)(\S)/gu,
+    (_, space, ch) => space + ch.toLocaleUpperCase("vi"),
+  );
+}
+
 function buildProductCard(p, { manage, sold = 0 }) {
   if (!qtyMap.has(p.id)) qtyMap.set(p.id, 1);
   if (!sizeMap.has(p.id)) sizeMap.set(p.id, "nho");
@@ -936,7 +944,7 @@ function buildProductCard(p, { manage, sold = 0 }) {
       </div>
       <img class="product-thumb" src="${imageUrl(p)}" alt="" width="92" height="92" decoding="async" />
       <div class="product-body">
-        <h3>${escapeHtml(p.name)}</h3>
+        <h3>${escapeHtml(displayProductName(p.name))}</h3>
         <p class="price">Nhỏ ${vnd.format(p.price)} · To ${vnd.format(p.price_large ?? p.price)}</p>
         <p class="sold">${sold} lượt bán</p>
       </div>
@@ -2452,7 +2460,7 @@ function paintDonePager() {
       const target = Number(btn.dataset.goto);
       if (target !== cur && target >= 1 && target <= total) {
         loadDoneOrders({ page: target })
-          .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+          .then(() => scrollToFirstDoneOrder())
           .catch((err) => toast(err.message || "Không tải được trang"));
       }
     });
@@ -3415,6 +3423,22 @@ async function loadOrders() {
   return ordersLoadPromise;
 }
 
+/** Đưa đơn đầu của trang vừa mở lên ngay dưới thanh lọc, không cuộn cả khung danh sách. */
+function scrollToFirstDoneOrder() {
+  requestAnimationFrame(() => {
+    const card = ordersEl?.querySelector(".order");
+    if (!card) return;
+    const sticky = document.querySelector("#tab-orders .orders-sticky");
+    const stickyH = sticky?.getBoundingClientRect().height || 0;
+    const top = card.getBoundingClientRect().top + window.scrollY - stickyH - 6;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({
+      top: Math.max(0, top),
+      behavior: reduce ? "auto" : "smooth",
+    });
+  });
+}
+
 /** Một trang đơn đã giao. Không gọi lúc mở trang chủ. */
 async function loadDoneOrders({ page = 1, today = doneTodayFilter } = {}) {
   const seq = ++doneLoadSeq;
@@ -3923,7 +3947,7 @@ $("done-today-filter")?.addEventListener("change", () => {
 $("done-pager-prev")?.addEventListener("click", () => {
   if (donePage > 1) {
     loadDoneOrders({ page: donePage - 1 })
-      .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+      .then(() => scrollToFirstDoneOrder())
       .catch((err) => toast(err.message || "Không tải được trang"));
   }
 });
@@ -3931,7 +3955,7 @@ $("done-pager-prev")?.addEventListener("click", () => {
 $("done-pager-next")?.addEventListener("click", () => {
   if (donePage < doneTotalPages) {
     loadDoneOrders({ page: donePage + 1 })
-      .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+      .then(() => scrollToFirstDoneOrder())
       .catch((err) => toast(err.message || "Không tải được trang"));
   }
 });
