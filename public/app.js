@@ -2073,15 +2073,35 @@ function renderOrders(orders) {
       })),
     );
     const same = orderBoardSig(ordersCache) === orderBoardSig(next);
+    const skeletonOnScreen = Boolean(ordersEl?.querySelector(".order-skeleton"));
     ordersCache = next;
     if (!ordersFetchedDay) ordersFetchedDay = day;
     writeOrdersCache(ordersCache);
-    if (same) {
+    if (same && !skeletonOnScreen) {
       updateOrderFilterCounts();
       return;
     }
   }
   paintOrdersBoard();
+}
+
+function emptyOrdersHtml(message) {
+  return `<div class="empty-orders" role="status">
+    <div class="empty-orders-stage" aria-hidden="true">
+      <span class="empty-orders-ring"></span>
+      <span class="empty-orders-ring delay"></span>
+      <svg class="empty-orders-mark" viewBox="0 0 120 120" fill="none">
+        <ellipse cx="60" cy="78" rx="34" ry="8" fill="#d7ebdf"/>
+        <path d="M28 62c0-18 14-32 32-32s32 14 32 32v6H28v-6z" fill="#f4fbf7" stroke="#0c7a52" stroke-width="2.2"/>
+        <path d="M40 58c6-10 14-14 20-14s14 4 20 14" stroke="#8fd0ae" stroke-width="2" stroke-linecap="round"/>
+        <rect x="46" y="34" width="28" height="16" rx="8" fill="#fff" stroke="#0a5f40" stroke-width="2"/>
+        <path d="M50 42h20M54 38c2 4 2 4 0 8M66 38c-2 4-2 4 0 8" stroke="#0c7a52" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M78 36c8 2 12 8 12 14-6-2-10-8-12-14z" fill="#1f9d68"/>
+        <path d="M86 34c6 6 6 12 2 16" stroke="#0a5f40" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <p class="empty-orders-text">${message}</p>
+  </div>`;
 }
 
 function paintOrdersBoard() {
@@ -2101,21 +2121,21 @@ function paintOrdersBoard() {
   }
 
   if (!hasAny) {
-    ordersEl.innerHTML = `<p class="empty">Chưa có đơn cần giao.</p>`;
+    ordersEl.innerHTML = emptyOrdersHtml("Chưa có đơn cần giao.");
     paintDonePager();
     return;
   }
   if (!visible.length) {
     const searching = Boolean(foldVn(orderSearchQuery));
-    ordersEl.innerHTML = `<p class="empty">${
+    ordersEl.innerHTML = emptyOrdersHtml(
       searching
         ? `Không tìm thấy khách “${escapeHtml(orderSearchQuery.trim())}”.`
         : orderFilter === "pending"
           ? "Không còn đơn chưa giao."
           : orderFilter === "done"
             ? `Chưa có đơn đã giao${doneTodayFilter ? " hôm nay" : ""}.`
-            : "Chưa có đơn cần giao."
-    }</p>`;
+            : "Chưa có đơn cần giao.",
+    );
     paintDonePager();
     return;
   }

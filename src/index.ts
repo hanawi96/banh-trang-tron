@@ -397,12 +397,17 @@ app.get("/api/stats", async (c) => {
       : Number(catalog.cost) || 0;
   };
   const sizeLabel = (size: OrderSize) => (size === "to" ? "To" : "Nhỏ");
+  // Nhóm trên sản phẩm đang bán thắng nhãn đóng băng trong đơn cũ.
+  // Đơn tạo trước khi gán Trà sữa bị ghi sẵn bánh tráng, nên không được dùng nhãn đó.
   const lineCategory = (
     raw: unknown,
     catalogCategory: ProductCategory | undefined,
   ): ProductCategory => {
+    if (catalogCategory === "tra-sua" || catalogCategory === "banh-trang") {
+      return catalogCategory;
+    }
     if (raw === "tra-sua" || raw === "banh-trang") return raw;
-    return catalogCategory || "banh-trang";
+    return "banh-trang";
   };
 
   let revenue = 0;

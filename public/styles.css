@@ -1843,6 +1843,82 @@ body.bulk-open .tabbar {
   color: var(--muted);
 }
 
+.empty-orders {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 28px 8px 12px;
+  text-align: center;
+}
+
+.empty-orders-stage {
+  position: relative;
+  width: 148px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+}
+
+.empty-orders-ring {
+  position: absolute;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(12, 122, 82, 0.28);
+  animation: empty-orders-pulse 2.8s var(--ease) infinite;
+}
+
+.empty-orders-ring.delay {
+  animation-delay: 1.4s;
+}
+
+.empty-orders-mark {
+  width: 112px;
+  height: 112px;
+  position: relative;
+  filter: drop-shadow(0 10px 16px rgba(12, 122, 82, 0.12));
+  animation: empty-orders-float 3.2s ease-in-out infinite;
+}
+
+.empty-orders-text {
+  margin: 0;
+  max-width: 260px;
+  color: var(--muted);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+@keyframes empty-orders-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes empty-orders-pulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-orders-mark,
+  .empty-orders-ring {
+    animation: none;
+  }
+}
+
 .loading-state {
   display: grid;
   justify-items: center;
