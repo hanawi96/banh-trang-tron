@@ -3229,40 +3229,42 @@ let productsLoadPromise = null;
 /** @type {Promise<void>|null} */
 let ordersLoadPromise = null;
 
-async function loadProducts() {
-  if (productsLoadPromise) return productsLoadPromise;
-  productsLoadPromise = (async () => {
-    const pre = await takePrefetch("products");
+async function loadProducts({ fresh = false } = {}) {
+  if (productsLoadPromise && !fresh) return productsLoadPromise;
+  const run = (async () => {
+    const pre = fresh ? null : await takePrefetch("products");
     const data =
       pre && Array.isArray(pre.products) ? pre : await api("/api/products");
     setProducts(data.products || []);
-  })().finally(() => {
+  })();
+  if (fresh) return run;
+  productsLoadPromise = run.finally(() => {
     productsLoadPromise = null;
   });
   return productsLoadPromise;
 }
 
 /** Luôn vẽ lại đúng tab đang mở từ server, không ghép cache tay. */
-async function refreshOrdersView() {
+async function refreshOrdersView({ fresh = false } = {}) {
   const q = String(orderSearchQuery || "").trim();
   if (q) {
-    await Promise.all([loadOrders(), runOrderSearch()]);
+    await Promise.all([loadOrders({ fresh }), runOrderSearch()]);
     return;
   }
   if (orderFilter === "done") {
     await Promise.all([
-      loadOrders(),
+      loadOrders({ fresh }),
       loadDoneOrders({ page: donePage, today: doneTodayFilter }),
     ]);
     return;
   }
-  await loadOrders();
+  await loadOrders({ fresh });
 }
 
-async function loadOrders() {
-  if (ordersLoadPromise) return ordersLoadPromise;
-  ordersLoadPromise = (async () => {
-    const pre = await takePrefetch("orders");
+async function loadOrders({ fresh = false } = {}) {
+  if (ordersLoadPromise && !fresh) return ordersLoadPromise;
+  const run = (async () => {
+    const pre = fresh ? null : await takePrefetch("orders");
     const data =
       pre && Array.isArray(pre.orders)
         ? pre
@@ -3272,7 +3274,9 @@ async function loadOrders() {
     ordersFetchedDay = vnDayKey();
     renderOrders(data.orders || []);
     if (products.length) renderMenu();
-  })().finally(() => {
+  })();
+  if (fresh) return run;
+  ordersLoadPromise = run.finally(() => {
     ordersLoadPromise = null;
   });
   return ordersLoadPromise;
@@ -3373,9 +3377,14 @@ function statsApiUrl() {
   return `/api/stats?range=${encodeURIComponent(statsRange)}`;
 }
 
-async function loadStats({ silent = false } = {}) {
+async function loadStats({ silent = false, fresh = false } = {}) {
   const key = statsCacheKey();
-  if (statsLoadPromise && statsPayloadKey === key && statsLoadingKey === key) {
+  if (
+    !fresh &&
+    statsLoadPromise &&
+    statsPayloadKey === key &&
+    statsLoadingKey === key
+  ) {
     return statsLoadPromise;
   }
   const root = $("stats");
@@ -3383,17 +3392,17 @@ async function loadStats({ silent = false } = {}) {
     statsPayload && statsPayloadKey === key
       ? statsPayload
       : readStatsCache(key);
-  if (cached) {
+  if (!fresh && cached) {
     statsPayload = cached;
     statsPayloadKey = key;
     if (!silent || activeTab === "stats") renderStats();
-  } else if (!silent && root) {
+  } else if (!silent && !statsPayload && root) {
     root.innerHTML = statsLoadingHtml();
   }
   syncStatsRangeButtons();
 
   const run = (async () => {
-    const pre = key === "today" ? await takePrefetch("stats") : null;
+    const pre = !fresh && key === "today" ? await takePrefetch("stats") : null;
     const data =
       pre && typeof pre.revenue === "number" ? pre : await api(statsApiUrl());
     if (statsCacheKey() !== key) return;
@@ -3675,15 +3684,14 @@ async function refreshData() {
   }
   try {
     if (tab === "stats") {
-      await Promise.all([loadProducts(), loadStats()]);
+      await Promise.all([loadProducts({ fresh: true }), loadStats({ fresh: true })]);
     } else if (tab === "orders") {
-      const jobs = [loadOrders(), loadProducts()];
-      if (orderFilter === "done") {
-        jobs.push(loadDoneOrders({ page: donePage }));
-      }
-      await Promise.all(jobs);
+      await Promise.all([
+        refreshOrdersView({ fresh: true }),
+        loadProducts({ fresh: true }),
+      ]);
     } else {
-      await Promise.all([loadProducts(), loadOrders()]);
+      await Promise.all([loadProducts({ fresh: true }), loadOrders({ fresh: true })]);
     }
     toast("Đã cập nhật");
   } catch (err) {
