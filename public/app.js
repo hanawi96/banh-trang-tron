@@ -9,6 +9,7 @@ const editModal = $("edit-modal");
 const deleteModal = $("delete-modal");
 const deleteOrderModal = $("delete-order-modal");
 const printConfirmModal = $("print-confirm-modal");
+const unpaidConfirmModal = $("unpaid-confirm-modal");
 const deliverConfirmModal = $("deliver-confirm-modal");
 const prepareModal = $("prepare-modal");
 const deliveredListModal = $("delivered-list-modal");
@@ -130,6 +131,7 @@ const CLONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox=
 const DELETE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>`;
 const PLUS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>`;
+const UNDO_ICON = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>`;
 
 const vndNum = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
@@ -1525,7 +1527,7 @@ function updateBulkBar() {
           <input type="checkbox" id="bulk-select-all-checkbox" />
           <span>Chọn tất cả</span>
         </label>
-        <button type="button" class="btn primary" id="bulk-unpaid">Đã CK</button>
+        <button type="button" class="btn primary" id="bulk-unpaid">Hủy CK</button>
         <button type="button" class="btn danger icon-only sm" id="bulk-delete" title="Xóa">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
             <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -1863,6 +1865,34 @@ function openPrintConfirm(ids) {
   printConfirmModal?.setAttribute("aria-hidden", "false");
   lockBody(true);
   requestAnimationFrame(() => $("confirm-print-order")?.focus());
+}
+
+let pendingUnpaidId = "";
+
+function openUnpaidConfirm(id) {
+  const order = findOrder(id);
+  if (!order || !(Number(order.paid_at) > 0)) return;
+  pendingUnpaidId = id;
+  const who = [order.customer, order.phone].filter(Boolean).join(" · ");
+  const text = $("unpaid-confirm-text");
+  if (text) {
+    text.textContent = who
+      ? `Đơn của ${who} sẽ trở lại chưa thanh toán.`
+      : "Đơn này sẽ trở lại chưa thanh toán.";
+  }
+  document.body.classList.add("confirm-open");
+  unpaidConfirmModal?.classList.remove("hidden");
+  unpaidConfirmModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("confirm-unpaid-order")?.focus());
+}
+
+function closeUnpaidConfirm() {
+  pendingUnpaidId = "";
+  unpaidConfirmModal?.classList.add("hidden");
+  unpaidConfirmModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
 }
 
 function closePrintConfirm() {
@@ -2241,7 +2271,7 @@ function paintOrdersBoard() {
       : "";
     const actionBtn =
       status === "done"
-        ? "Hoàn tác"
+        ? UNDO_ICON
         : status === "printed"
           ? `${CHECK_ICON}<span>Đánh dấu đã giao</span>`
           : `${PRINT_ICON}<span>In đơn</span>`;
@@ -2255,33 +2285,37 @@ function paintOrdersBoard() {
     const deliveredAtText = formatVnDateTime(o.delivered_at);
     const paidAtText = formatVnDateTime(o.paid_at);
     const isPaid = Number(o.paid_at) > 0;
+    const onDoneTab = orderFilter === "done";
+    const placedAtText = formatVnDateTime(o.created_at);
     const sameStamp =
       printedAtText &&
       deliveredAtText &&
       Number(o.printed_at) > 0 &&
       Number(o.delivered_at) > 0 &&
       Math.abs(Number(o.printed_at) - Number(o.delivered_at)) < 2000;
-    const timelineHtml = sameStamp
-      ? `<div class="order-timeline"><span class="order-timeline-item"><em>In/Giao</em> ${escapeHtml(printedAtText)}</span>${
-          paidAtText
-            ? `<span class="order-timeline-item order-paid"><em>Thanh toán</em> ${escapeHtml(paidAtText)}</span>`
-            : ""
-        }</div>`
-      : printedAtText || deliveredAtText || paidAtText
-        ? `<div class="order-timeline">${
-            printedAtText
-              ? `<span class="order-timeline-item"><em>In</em> ${escapeHtml(printedAtText)}</span>`
-              : ""
-          }${
-            deliveredAtText
-              ? `<span class="order-timeline-item"><em>Giao</em> ${escapeHtml(deliveredAtText)}</span>`
-              : ""
-          }${
+    const timelineHtml = onDoneTab
+      ? ""
+      : sameStamp
+        ? `<div class="order-timeline"><span class="order-timeline-item"><em>In/Giao</em> ${escapeHtml(printedAtText)}</span>${
             paidAtText
               ? `<span class="order-timeline-item order-paid"><em>Thanh toán</em> ${escapeHtml(paidAtText)}</span>`
               : ""
           }</div>`
-        : "";
+        : printedAtText || deliveredAtText || paidAtText
+          ? `<div class="order-timeline">${
+              printedAtText
+                ? `<span class="order-timeline-item"><em>In</em> ${escapeHtml(printedAtText)}</span>`
+                : ""
+            }${
+              deliveredAtText
+                ? `<span class="order-timeline-item"><em>Giao</em> ${escapeHtml(deliveredAtText)}</span>`
+                : ""
+            }${
+              paidAtText
+                ? `<span class="order-timeline-item order-paid"><em>Thanh toán</em> ${escapeHtml(paidAtText)}</span>`
+                : ""
+            }</div>`
+          : "";
     el.innerHTML = `
       <header class="order-head">
         <div class="order-head-left">
@@ -2289,13 +2323,15 @@ function paintOrdersBoard() {
             <input type="checkbox" data-select-order="${escapeHtml(o.id)}" ${checked} />
             <span></span>
           </label>
-          <span class="time" title="Giờ nhận đơn">${timeFmt.format(o.created_at)}</span>
+          <span class="time" title="${onDoneTab ? "Thời điểm đặt đơn" : "Giờ nhận đơn"}">${
+            onDoneTab && placedAtText ? escapeHtml(placedAtText) : timeFmt.format(o.created_at)
+          }</span>
           <div class="order-badges">
             <span class="order-status order-status-${status}">${statusText}</span>
             ${villageBadge}
-            ${isPaid ? `<button type="button" class="order-paid-badge" data-unmark-paid="${escapeHtml(o.id)}" title="Click để hủy đánh dấu thanh toán">Đã CK</button>` : ""}
+            ${isPaid ? `<button type="button" class="order-paid-badge" data-unmark-paid="${escapeHtml(o.id)}" aria-label="Hủy đánh dấu đã chuyển khoản">Đã CK</button>` : ""}
             ${
-              whenText
+              !onDoneTab && whenText
                 ? `<span class="order-slot order-slot-${slot || "none"}">${escapeHtml(whenText)}</span>`
                 : ""
             }
@@ -2316,13 +2352,13 @@ function paintOrdersBoard() {
       </div>
       <div class="order-actions-wrap">
         <div class="order-actions${status === "pending" ? " order-actions-pending" : ""}${status === "done" && !isPaid ? " order-actions-done" : ""}${status === "done" && isPaid ? " order-actions-done-paid" : ""}">
-          <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}">
+          <button type="button" class="order-status-btn order-status-btn-${status}" data-toggle-status="${escapeHtml(o.id)}"${status === "done" ? ` aria-label="Hoàn tác"` : ""}>
             ${actionBtn}
           </button>
           ${quickDeliverBtn}
           ${
             status === "done" && !isPaid
-              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">Đã CK</button>`
+              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">${CHECK_ICON}<span>Đã CK</span></button>`
               : ""
           }
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
@@ -4167,6 +4203,23 @@ deliverConfirmModal?.addEventListener("click", (e) => {
   }
 });
 
+$("confirm-unpaid-order")?.addEventListener("click", () => {
+  const id = pendingUnpaidId;
+  closeUnpaidConfirm();
+  if (id) unmarkOrderPaid(id);
+});
+
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (
+    t.hasAttribute("data-close-unpaid-confirm") ||
+    t.closest("[data-close-unpaid-confirm]")
+  ) {
+    closeUnpaidConfirm();
+  }
+});
+
 $("confirm-print-order")?.addEventListener("click", async () => {
   const ids = pendingPrintIds.slice();
   closePrintConfirm();
@@ -4305,7 +4358,7 @@ ordersEl.addEventListener("click", (e) => {
   const unpaidBtn = t.closest("[data-unmark-paid]");
   if (unpaidBtn) {
     const id = unpaidBtn.getAttribute("data-unmark-paid");
-    if (id) unmarkOrderPaid(id);
+    if (id) openUnpaidConfirm(id);
     return;
   }
 });
@@ -4361,6 +4414,7 @@ document.addEventListener("keydown", (e) => {
   if (!prepareModal?.classList.contains("hidden")) closePrepareSummary();
   else if (!deliveredListModal?.classList.contains("hidden")) closeDeliveredListModal();
   else if (!statsDateModal?.classList.contains("hidden")) closeStatsDateModal();
+  else if (!unpaidConfirmModal?.classList.contains("hidden")) closeUnpaidConfirm();
   else if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
   else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();
   else if (!deleteOrderModal?.classList.contains("hidden")) closeDeleteOrderModal();

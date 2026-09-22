@@ -430,6 +430,7 @@ html.booting .tabbar {
 }
 
 #print-confirm-modal,
+#unpaid-confirm-modal,
 #deliver-confirm-modal,
 #prepare-modal,
 #delivered-list-modal,
@@ -1186,7 +1187,7 @@ body.confirm-open .order-bulk-popup {
   border-radius: 12px;
   background: #fff;
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 16px;
   font-weight: 650;
   color: var(--ink);
   outline: none;
@@ -1497,19 +1498,33 @@ body.bulk-open .tabbar {
   flex-shrink: 0;
   background: #dbeafe;
   color: #1e40af;
-  border: none;
+  border: 0;
   cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.order-paid-badge:hover {
-  background: #bfdbfe;
-  color: #1e3a8a;
-  transform: translateY(-1px);
 }
 
 .order-paid-badge:active {
-  transform: translateY(0);
+  background: #bfdbfe;
+}
+
+.unpaid-confirm-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #fff1ee;
+  color: #b42318;
+}
+
+.unpaid-confirm-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.unpaid-confirm-go {
+  background: #b42318;
+  color: #fff;
 }
 
 .order-timeline-item.order-paid {
@@ -1519,22 +1534,41 @@ body.bulk-open .tabbar {
 
 .order-paid-btn {
   width: 100%;
-  min-height: 42px;
-  border: 0;
-  border-radius: 12px;
-  font-weight: 750;
-  font-size: 0.92rem;
+  min-height: 40px;
+  border: 1px solid #c9ddf8;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: -0.01em;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  color: #fff;
+  gap: 5px;
+  background: #f3f8ff;
+  color: #1d4ed8;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.order-paid-btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 .order-paid-btn:active {
   transform: scale(0.98);
+  background: #e5f0ff;
+}
+
+.order-unpaid-btn {
+  background: #fff8f6;
+  color: #b42318;
+  border-color: #f3cfc8;
+}
+
+.order-unpaid-btn:active {
+  background: #ffefeb;
 }
 
 .order-actions-wrap {
@@ -1554,25 +1588,27 @@ body.bulk-open .tabbar {
 }
 
 .order-actions-done {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px 42px 42px;
+  grid-template-columns: 42px minmax(0, 1fr) 42px 42px 42px;
 }
 
 .order-actions-done-paid {
-  grid-template-columns: minmax(0, 1fr) 42px 42px 42px;
+  grid-template-columns: 40px 40px 40px 40px;
+  justify-content: end;
 }
 
 .order-status-btn {
   width: 100%;
-  min-height: 42px;
-  border: 0;
-  border-radius: 12px;
-  font-weight: 750;
-  font-size: 0.92rem;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: -0.01em;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .order-status-btn svg {
@@ -1605,8 +1641,24 @@ body.bulk-open .tabbar {
 }
 
 .order-status-btn-done {
-  background: linear-gradient(180deg, #64748b 0%, #475569 100%);
-  color: #fff;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  background: transparent;
+  color: #3e4e48;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.order-status-btn-done svg {
+  width: 20px;
+  height: 20px;
+}
+
+.order-status-btn-done:active {
+  background: transparent;
+  opacity: 0.55;
 }
 
 .order-status-btn:active {
@@ -1663,13 +1715,13 @@ body.bulk-open .tabbar {
 .order-edit-icon,
 .order-clone-icon,
 .order-delete-icon {
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: #f4f8f6;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--accent-2);
   cursor: pointer;
   flex-shrink: 0;
@@ -1677,26 +1729,22 @@ body.bulk-open .tabbar {
 
 .order-delete-icon {
   color: var(--danger);
-  background: #fff5f4;
-  border-color: #f0d0cc;
+  background: transparent;
 }
 
 .order-edit-icon svg,
 .order-clone-icon svg,
 .order-delete-icon svg {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
 }
 
 .order-edit-icon:active,
-.order-clone-icon:active {
-  transform: scale(0.96);
-  background: var(--accent-soft);
-}
-
+.order-clone-icon:active,
 .order-delete-icon:active {
-  transform: scale(0.96);
-  background: #ffe8e6;
+  transform: scale(0.94);
+  background: transparent;
+  opacity: 0.55;
 }
 
 .order-main {
