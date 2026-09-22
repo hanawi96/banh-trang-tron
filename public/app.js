@@ -1411,51 +1411,44 @@ function summarizeOrderServings(orders) {
   return { total, rows, parts, bars };
 }
 
-/** Popup chuẩn bị làm bánh — giống tờ tổng kết in, xem nhanh không cần in */
-function openPrepareSummary(ids) {
-  const idList = [...new Set((ids || []).filter(Boolean))];
-  const list = [];
-  for (const id of idList) {
-    const order = findOrder(id);
-    if (order) list.push(order);
+/** Popup tổng quan đơn chưa giao theo thôn. */
+function openPrepareSummary() {
+  const orders = ordersCache.filter((order) => order && isOpenStatus(order.status));
+  const buckets = new Map(VILLAGES.map((name) => [name, { count: 0, revenue: 0 }]));
+  let other = { count: 0, revenue: 0 };
+  let totalRevenue = 0;
+  for (const order of orders) {
+    const money = Math.max(0, Number(order.total) || 0);
+    totalRevenue += money;
+    const village = parseVillage(order.village);
+    if (!village) {
+      other.count += 1;
+      other.revenue += money;
+      continue;
+    }
+    const bucket = buckets.get(village);
+    bucket.count += 1;
+    bucket.revenue += money;
   }
-  if (!list.length) {
-    toast("Không có đơn chưa giao để chuẩn bị");
-    return;
-  }
-
-  const { total, rows, bars } = summarizeOrderServings(list);
-  const barsText = formatBars(bars);
   const title = $("prepare-title");
   const stats = $("prepare-stats");
-  const listEl = $("prepare-list");
-
-  if (title) title.textContent = "Tổng kết làm bánh";
+  if (title) title.textContent = "Tổng quan";
   if (stats) {
-    stats.innerHTML = `
-      <div class="prepare-stat">
-        <span class="prepare-stat-label">Tổng</span>
-        <strong class="prepare-stat-num">${total}</strong>
-        <span class="prepare-stat-unit">suất</span>
-      </div>
-      <div class="prepare-stat prepare-stat-bars">
-        <span class="prepare-stat-label">Cần</span>
-        <strong class="prepare-stat-num">${escapeHtml(barsText)}</strong>
-        <span class="prepare-stat-unit">thanh</span>
-      </div>`;
-  }
-  if (listEl) {
-    listEl.innerHTML = rows.length
-      ? rows
-          .map(
-            (r) => `<li>
-        <span class="prepare-qty">${r.qty}</span>
-        <span class="prepare-name">${escapeHtml(r.name)}</span>
-        <span class="prepare-size">Size ${escapeHtml(sizeLabel(r.size))}</span>
-      </li>`,
-          )
-          .join("")
-      : `<li class="prepare-empty">Chưa có suất</li>`;
+    const card = (name, count, revenue) => `<button type="button" class="area-preset${count ? " is-on" : ""}" tabindex="-1">
+        <span>${escapeHtml(name)}</span>
+        <strong>${count}</strong>
+        <em>đơn</em>
+        <small>${vnd.format(revenue)}</small>
+      </button>`;
+    const presets = VILLAGES.map((name) => {
+      const bucket = buckets.get(name);
+      return card(name, bucket.count, bucket.revenue);
+    });
+    if (other.count) presets.push(card("Chưa rõ thôn", other.count, other.revenue));
+    stats.innerHTML = `<div class="area-total">
+        <span>Tổng doanh thu</span>
+        <strong>${vnd.format(totalRevenue)}</strong>
+      </div>${presets.join("")}`;
   }
 
   document.body.classList.add("confirm-open");
@@ -1468,10 +1461,7 @@ function openPrepareSummary(ids) {
 }
 
 function openPrepareForPendingOrders() {
-  const ids = ordersCache
-    .filter((o) => o && isOpenStatus(o.status))
-    .map((o) => o.id);
-  openPrepareSummary(ids);
+  openPrepareSummary();
 }
 
 function closePrepareSummary() {
