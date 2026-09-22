@@ -2367,7 +2367,7 @@ function paintOrdersBoard() {
           ${quickDeliverBtn}
           ${
             status === "done" && !isPaid
-              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">${CHECK_ICON}<span>Đã CK</span></button>`
+              ? `<button type="button" class="order-paid-btn" data-mark-paid="${escapeHtml(o.id)}">${CHECK_ICON}<span>Xác nhận CK</span></button>`
               : ""
           }
           <button type="button" class="order-edit-icon" data-edit-order="${escapeHtml(o.id)}" aria-label="Sửa đơn">
