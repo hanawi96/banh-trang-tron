@@ -10,6 +10,7 @@ const deleteModal = $("delete-modal");
 const deleteOrderModal = $("delete-order-modal");
 const printConfirmModal = $("print-confirm-modal");
 const unpaidConfirmModal = $("unpaid-confirm-modal");
+const undoDeliverModal = $("undo-deliver-modal");
 const deliverConfirmModal = $("deliver-confirm-modal");
 const prepareModal = $("prepare-modal");
 const deliveredListModal = $("delivered-list-modal");
@@ -490,11 +491,10 @@ function renderStats() {
   const deliveredCount = Number(s.deliveredCount) || 0;
   const revenue = Number(s.revenue) || 0;
   const profit = Number(s.profit) || 0;
-  const receivedCount = Number(s.receivedCount) || 0;
   const openCount = Number(s.openCount) || 0;
   const topProducts = Array.isArray(s.topProducts) ? s.topProducts : [];
 
-  if (!deliveredCount && !receivedCount && !openCount) {
+  if (!deliveredCount && !openCount) {
     root.innerHTML = emptyStatsHtml(
       label,
       `Chưa có đơn đã giao trong khoảng “${escapeHtml(label)}”.`,
@@ -588,13 +588,6 @@ function renderStats() {
         <strong class="ok">${deliveredCount}</strong>
         <small>${deliveredCount > 0 ? "bấm để xem" : "trong kỳ"}</small>
       </button>
-      <button type="button" class="stats-card stats-card-btn"${
-        receivedCount > 0 ? ` id="stats-open-received"` : " disabled"
-      }>
-        <span>Nhận đơn</span>
-        <strong>${receivedCount}</strong>
-        <small>${receivedCount > 0 ? "bấm để xem" : "trong kỳ"}</small>
-      </button>
       <article class="stats-card stats-card-open">
         <span>Chưa giao</span>
         <strong class="warn">${openCount}</strong>
@@ -614,9 +607,6 @@ function renderStats() {
   `;
   $("stats-open-delivered")?.addEventListener("click", () => {
     openDeliveredListModal();
-  });
-  $("stats-open-received")?.addEventListener("click", () => {
-    openReceivedListModal();
   });
   root.querySelectorAll("[data-stats-village]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -672,15 +662,6 @@ function openDeliveredListModal() {
   });
 }
 
-function openReceivedListModal() {
-  openStatsOrdersModal({
-    kind: "received",
-    village: "",
-    title: "Nhận đơn",
-    meta: `${statsPeriodLabel()} · theo giờ tạo đơn (VN)`,
-  });
-}
-
 function openVillageOrdersModal(villageName) {
   const name = String(villageName || "").trim();
   if (!name) return;
@@ -696,7 +677,7 @@ function statsOrdersApiUrl(page) {
   const q = statsModalQuery;
   if (!q) return "";
   const params = new URLSearchParams();
-  params.set("kind", q.kind === "received" ? "received" : "delivered");
+  params.set("kind", "delivered");
   params.set("page", String(page));
   params.set("limit", String(STATS_MODAL_PAGE_SIZE));
   if (q.village) params.set("village", q.village);
@@ -768,7 +749,6 @@ function paintStatsOrdersModalPage() {
   const pageEl = $("delivered-list-page");
   const prevBtn = $("delivered-list-prev");
   const nextBtn = $("delivered-list-next");
-  const timeKind = statsModalTimeKind;
   const pageOrders = statsModalOrders;
 
   if (listEl) {
@@ -781,14 +761,8 @@ function paintStatsOrdersModalPage() {
         const when = [village, deliveryDateLabel(o.delivery_date || ""), slotLabel(slot)]
           .filter(Boolean)
           .join(" · ");
-        const timeText =
-          timeKind === "received"
-            ? `Tạo ${formatVnDateTime(o.created_at) || "—"}`
-            : `Giao ${formatVnDateTime(o.delivered_at) || "—"}`;
-        const statusBit =
-          timeKind === "received"
-            ? ` · ${escapeHtml(statusLabel(normalizeStatus(o.status)))}`
-            : "";
+        const timeText = `Giao ${formatVnDateTime(o.delivered_at) || "—"}`;
+        const statusBit = "";
         const items = (o.items || [])
           .map((i) => {
             const sz = sizeLabel(i.size);
@@ -1864,6 +1838,41 @@ function openPrintConfirm(ids) {
 }
 
 let pendingUnpaidId = "";
+let pendingUndoIds = [];
+
+function openUndoDeliverConfirm(ids) {
+  const unique = [...new Set((ids || []).filter(Boolean))].filter((id) => {
+    const order = findOrder(id);
+    return order && normalizeStatus(order.status) === "done";
+  });
+  if (!unique.length) return;
+  pendingUndoIds = unique;
+  const text = $("undo-deliver-text");
+  if (text) {
+    if (unique.length === 1) {
+      const order = findOrder(unique[0]);
+      const who = [order?.customer, order?.phone].filter(Boolean).join(" · ");
+      text.textContent = who
+        ? `Đơn của ${who} sẽ quay lại tab Chưa giao.`
+        : "Đơn này sẽ quay lại tab Chưa giao.";
+    } else {
+      text.textContent = `${unique.length} đơn đã giao sẽ quay lại tab Chưa giao.`;
+    }
+  }
+  document.body.classList.add("confirm-open");
+  undoDeliverModal?.classList.remove("hidden");
+  undoDeliverModal?.setAttribute("aria-hidden", "false");
+  lockBody(true);
+  requestAnimationFrame(() => $("confirm-undo-deliver")?.focus());
+}
+
+function closeUndoDeliverConfirm() {
+  pendingUndoIds = [];
+  undoDeliverModal?.classList.add("hidden");
+  undoDeliverModal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("confirm-open");
+  lockBody(false);
+}
 
 function openUnpaidConfirm(id) {
   const order = findOrder(id);
@@ -2016,6 +2025,46 @@ function adjustOrderCounts({ openDelta = 0, doneDelta = 0 } = {}) {
     serverOpenCount = Math.max(0, serverOpenCount + openDelta);
   }
   doneCount = Math.max(0, doneCount + doneDelta);
+}
+
+/** Ẩn đơn khỏi tab Chưa giao ngay, trước khi server xác nhận. */
+function hideOrdersAsDelivered(orders) {
+  const now = Date.now();
+  const snaps = [];
+  for (const order of orders) {
+    if (!order?.id || !isOpenStatus(order.status)) continue;
+    snaps.push({
+      order,
+      status: order.status,
+      delivered_at: order.delivered_at ?? null,
+    });
+    order.status = "done";
+    if (!(Number(order.delivered_at) > 0)) order.delivered_at = now;
+    selectedOrderIds.delete(order.id);
+  }
+  if (!snaps.length) return snaps;
+  const drop = new Set(snaps.map((snap) => snap.order.id));
+  ordersCache = ordersCache.filter((order) => !drop.has(order.id));
+  if (searchHits) searchHits = searchHits.filter((order) => !drop.has(order.id));
+  adjustOrderCounts({ openDelta: -snaps.length, doneDelta: snaps.length });
+  paintOrdersBoard();
+  return snaps;
+}
+
+function restoreHiddenDeliveries(snaps) {
+  if (!snaps?.length) return;
+  for (const snap of snaps) {
+    snap.order.status = snap.status;
+    snap.order.delivered_at = snap.delivered_at;
+  }
+  const back = snaps.map((snap) => snap.order);
+  const ids = new Set(back.map((order) => order.id));
+  ordersCache = sortOrders([
+    ...ordersCache.filter((order) => !ids.has(order.id)),
+    ...back,
+  ]);
+  adjustOrderCounts({ openDelta: snaps.length, doneDelta: -snaps.length });
+  paintOrdersBoard();
 }
 
 /** Đơn đã giao không nằm trong danh sách trang chủ. Trang đang xem thì cập nhật tại chỗ. */
@@ -2464,6 +2513,8 @@ async function setOrderStatus(id, status, opts = {}) {
   const next = normalizeStatus(status);
   if (old === next) return;
   const setPrinted = Boolean(opts.setPrinted) && next === "done";
+  const hideNow = next === "done" && isOpenStatus(old);
+  const hidden = hideNow ? hideOrdersAsDelivered([prev]) : [];
 
   statusBusy.add(id);
   try {
@@ -2472,11 +2523,12 @@ async function setOrderStatus(id, status, opts = {}) {
       body: JSON.stringify({ status: next, setPrinted }),
     });
     if (next === "done") selectedOrderIds.delete(id);
-    await refreshOrdersView();
+    if (!hideNow) await refreshOrdersView();
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
+    if (hideNow) restoreHiddenDeliveries(hidden);
     toast(err.message || "Không cập nhật được");
   } finally {
     statusBusy.delete(id);
@@ -2589,6 +2641,8 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     .map((id) => findOrder(id))
     .filter((o) => o && normalizeStatus(o.status) !== next);
   if (!targets.length) return;
+  const hideNow = next === "done";
+  const hidden = hideNow ? hideOrdersAsDelivered(targets) : [];
 
   try {
     await api("/api/orders/status-bulk", {
@@ -2602,7 +2656,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     if (next === "done") {
       for (const o of targets) selectedOrderIds.delete(o.id);
     }
-    await refreshOrdersView();
+    if (!hideNow) await refreshOrdersView();
     if (!opts.silent) {
       if (next === "done") toast(`Đã giao ${targets.length} đơn`);
       else if (next === "printed") toast(`Đã in ${targets.length} đơn`);
@@ -2612,6 +2666,7 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       loadStats().catch(() => {});
     }
   } catch (err) {
+    if (hideNow) restoreHiddenDeliveries(hidden);
     toast(err.message || "Không cập nhật được");
   }
 }
@@ -4062,12 +4117,7 @@ function closeDeliverConfirm() {
  */
 async function bulkUndoDeliver(ids) {
   if (!ids.length) return;
-  const confirmMsg = `Hoàn tác ${ids.length} đơn đã giao về trạng thái chưa giao?`;
-  if (!confirm(confirmMsg)) return;
-  
-  selectedOrderIds.clear();
-  await setOrdersStatusBulk(ids, "pending");
-  paintOrdersBoard();
+  openUndoDeliverConfirm(ids);
 }
 
 /**
@@ -4098,6 +4148,27 @@ deliverConfirmModal?.addEventListener("click", (e) => {
     t.closest("[data-close-deliver-confirm]")
   ) {
     closeDeliverConfirm();
+  }
+});
+
+$("confirm-undo-deliver")?.addEventListener("click", () => {
+  const ids = pendingUndoIds.slice();
+  closeUndoDeliverConfirm();
+  if (ids.length === 1) setOrderStatus(ids[0], "pending");
+  else if (ids.length > 1) {
+    selectedOrderIds.clear();
+    setOrdersStatusBulk(ids, "pending");
+  }
+});
+
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (
+    t.hasAttribute("data-close-undo-deliver") ||
+    t.closest("[data-close-undo-deliver]")
+  ) {
+    closeUndoDeliverConfirm();
   }
 });
 
@@ -4222,8 +4293,7 @@ ordersEl.addEventListener("click", (e) => {
       // Đơn cũ còn trạng thái đã in → đánh dấu giao nốt
       setOrderStatus(id, "done");
     } else {
-      // Hoàn tác giao → chưa giao
-      setOrderStatus(id, "pending");
+      openUndoDeliverConfirm([id]);
     }
     return;
   }
@@ -4312,6 +4382,7 @@ document.addEventListener("keydown", (e) => {
   if (!prepareModal?.classList.contains("hidden")) closePrepareSummary();
   else if (!deliveredListModal?.classList.contains("hidden")) closeDeliveredListModal();
   else if (!statsDateModal?.classList.contains("hidden")) closeStatsDateModal();
+  else if (!undoDeliverModal?.classList.contains("hidden")) closeUndoDeliverConfirm();
   else if (!unpaidConfirmModal?.classList.contains("hidden")) closeUnpaidConfirm();
   else if (!deliverConfirmModal?.classList.contains("hidden")) closeDeliverConfirm();
   else if (!printConfirmModal?.classList.contains("hidden")) closePrintConfirm();

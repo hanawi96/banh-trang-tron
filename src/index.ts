@@ -370,7 +370,7 @@ app.get("/api/stats", async (c) => {
   const { start, end } = custom ?? rangeVn(rangeKey);
   const rangeOut = custom ? "custom" : rangeKey;
 
-  const [deliveredRes, receivedRes, openRes, products] = await Promise.all([
+  const [deliveredRes, openRes, products] = await Promise.all([
     db.execute({
       sql: `SELECT id, items_json, total, customer, phone, village, delivery_date,
                    delivered_at, printed_at, created_at
@@ -379,11 +379,6 @@ app.get("/api/stats", async (c) => {
               AND COALESCE(delivered_at, printed_at, created_at) >= ?
               AND COALESCE(delivered_at, printed_at, created_at) < ?
             ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC`,
-      args: [start, end],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM orders
-            WHERE created_at >= ? AND created_at < ?`,
       args: [start, end],
     }),
     db.execute({
@@ -529,7 +524,6 @@ app.get("/api/stats", async (c) => {
     }));
 
   const deliveredCount = deliveredRes.rows.length;
-  const receivedCount = Number(receivedRes.rows[0]?.cnt || 0);
   const openCount = Number(openRes.rows[0]?.cnt || 0);
 
   return c.json({
@@ -540,7 +534,6 @@ app.get("/api/stats", async (c) => {
     revenue,
     profit,
     deliveredCount,
-    receivedCount,
     openCount,
     byVillage,
     byCategory,
@@ -555,7 +548,6 @@ app.get("/api/stats/orders", async (c) => {
   const custom = ymdRangeToUnix(c.req.query("from"), c.req.query("to"));
   const rangeKey = parseStatsRangeKey(c.req.query("range"));
   const { start, end } = custom ?? rangeVn(rangeKey);
-  const kind = c.req.query("kind") === "received" ? "received" : "delivered";
   const villageRaw = String(c.req.query("village") || "").trim();
   const page = Math.max(1, Math.floor(Number(c.req.query("page")) || 1));
   const limit = Math.min(
@@ -586,27 +578,12 @@ app.get("/api/stats/orders", async (c) => {
         ? [villageFilter]
         : [];
 
-  let countSql: string;
-  let listSql: string;
-  let baseArgs: (string | number)[];
-
-  if (kind === "received") {
-    countSql = `SELECT COUNT(*) AS cnt FROM orders
-                WHERE created_at >= ? AND created_at < ? ${villageClause}`;
-    listSql = `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
-                      status, created_at
-               FROM orders
-               WHERE created_at >= ? AND created_at < ? ${villageClause}
-               ORDER BY created_at DESC
-               LIMIT ? OFFSET ?`;
-    baseArgs = [start, end, ...villageArgs];
-  } else {
-    countSql = `SELECT COUNT(*) AS cnt FROM orders
+  const countSql = `SELECT COUNT(*) AS cnt FROM orders
                 WHERE status = 'done'
                   AND COALESCE(delivered_at, printed_at, created_at) >= ?
                   AND COALESCE(delivered_at, printed_at, created_at) < ?
                   ${villageClause}`;
-    listSql = `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
+  const listSql = `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
                       delivered_at, printed_at, created_at
                FROM orders
                WHERE status = 'done'
@@ -615,8 +592,7 @@ app.get("/api/stats/orders", async (c) => {
                  ${villageClause}
                ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
                LIMIT ? OFFSET ?`;
-    baseArgs = [start, end, ...villageArgs];
-  }
+  const baseArgs = [start, end, ...villageArgs];
 
   const [countRes, listRes] = await Promise.all([
     db.execute({ sql: countSql, args: baseArgs }),
@@ -645,13 +621,6 @@ app.get("/api/stats/orders", async (c) => {
         size: i.size === "to" ? "to" : "nho",
       })),
     };
-    if (kind === "received") {
-      return {
-        ...base,
-        status: parseOrderStatus(row.status),
-        created_at: parseTs(row.created_at),
-      };
-    }
     return {
       ...base,
       delivered_at: parseTs(
@@ -661,7 +630,7 @@ app.get("/api/stats/orders", async (c) => {
   });
 
   return c.json({
-    kind,
+    kind: "delivered",
     page,
     limit,
     total,

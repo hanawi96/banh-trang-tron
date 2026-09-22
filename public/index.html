@@ -719,6 +719,34 @@
       </div>
     </div>
 
+    <div id="undo-deliver-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-undo-deliver></div>
+      <div
+        class="modal-sheet modal-sheet-sm modal-sheet-print"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="undo-deliver-title"
+      >
+        <div class="unpaid-confirm-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+          </svg>
+        </div>
+        <h2 id="undo-deliver-title" class="print-confirm-title">Hoàn tác đã giao?</h2>
+        <p class="print-confirm-text" id="undo-deliver-text">
+          Đơn sẽ quay lại tab Chưa giao.
+        </p>
+        <div class="confirm-actions">
+          <button type="button" class="btn ghost full" data-close-undo-deliver>
+            Để sau
+          </button>
+          <button type="button" class="btn primary full" id="confirm-undo-deliver">
+            Xác nhận
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="unpaid-confirm-modal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-unpaid-confirm></div>
       <div
