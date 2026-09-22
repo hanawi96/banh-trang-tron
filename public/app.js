@@ -2852,12 +2852,12 @@ function slotLabel(slot) {
 const VILLAGES = [
   "Đông Cao",
   "Tráng Việt",
-  "Thường Lệ",
-  "Liễu Trì",
   "Văn Quán",
   "Văn Khê",
   "Hạ Lôi",
   "Tiền Phong",
+  "Thường Lệ",
+  "Liễu Trì",
 ];
 
 function parseVillage(raw) {

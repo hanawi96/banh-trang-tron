@@ -109,12 +109,12 @@ export type DeliverySlot = "trua" | "chieu";
 export const VILLAGES = [
   "Đông Cao",
   "Tráng Việt",
-  "Thường Lệ",
-  "Liễu Trì",
   "Văn Quán",
   "Văn Khê",
   "Hạ Lôi",
   "Tiền Phong",
+  "Thường Lệ",
+  "Liễu Trì",
 ] as const;
 
 export type Village = (typeof VILLAGES)[number];

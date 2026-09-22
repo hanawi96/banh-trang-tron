@@ -827,12 +827,12 @@ app.get("/api/orders", async (c) => {
                 CASE village
                   WHEN 'Đông Cao' THEN 0
                   WHEN 'Tráng Việt' THEN 1
-                  WHEN 'Thường Lệ' THEN 2
-                  WHEN 'Liễu Trì' THEN 3
-                  WHEN 'Văn Quán' THEN 4
-                  WHEN 'Văn Khê' THEN 5
-                  WHEN 'Hạ Lôi' THEN 6
-                  WHEN 'Tiền Phong' THEN 7
+                  WHEN 'Văn Quán' THEN 2
+                  WHEN 'Văn Khê' THEN 3
+                  WHEN 'Hạ Lôi' THEN 4
+                  WHEN 'Tiền Phong' THEN 5
+                  WHEN 'Thường Lệ' THEN 6
+                  WHEN 'Liễu Trì' THEN 7
                   ELSE 9
                 END ASC,
                 CASE delivery_slot
