@@ -366,12 +366,10 @@ function refreshOrdersIfDayChanged() {
 function showOrdersSkeleton() {
   if (!ordersEl) return;
   ordersEl.setAttribute("aria-busy", "true");
-  ordersEl.innerHTML = `
-    <div class="order-skeleton" aria-hidden="true">
-      <div class="order-skeleton-card"></div>
-      <div class="order-skeleton-card"></div>
-      <div class="order-skeleton-card"></div>
-    </div>`;
+  ordersEl.innerHTML = `<div class="loading-state" role="status" aria-live="polite">
+    <span class="loading-spinner" aria-hidden="true"></span>
+    <p>Đang tải đơn hàng</p>
+  </div>`;
 }
 
 /** Consume early prefetch from index.html, if present */
@@ -2121,7 +2119,7 @@ function renderOrders(orders) {
       })),
     );
     const same = orderBoardSig(ordersCache) === orderBoardSig(next);
-    const skeletonOnScreen = Boolean(ordersEl?.querySelector(".order-skeleton"));
+    const skeletonOnScreen = Boolean(ordersEl?.querySelector(".loading-state"));
     ordersCache = next;
     if (!ordersFetchedDay) ordersFetchedDay = day;
     if (same && !skeletonOnScreen) {

@@ -59,39 +59,7 @@ html.booting .tabbar {
   visibility: hidden !important;
 }
 
-.order-skeleton {
-  display: grid;
-  gap: 10px;
-  padding: 2px 0 8px;
-}
 
-.order-skeleton-card {
-  height: 92px;
-  border-radius: 16px;
-  background: linear-gradient(
-    90deg,
-    #eef3f0 0%,
-    #f7faf8 45%,
-    #eef3f0 90%
-  );
-  background-size: 200% 100%;
-  animation: order-skeleton-shine 1.1s ease-in-out infinite;
-}
-
-@keyframes order-skeleton-shine {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -100% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .order-skeleton-card {
-    animation: none;
-  }
-}
 
 .brand-mark {
   margin: 0;
