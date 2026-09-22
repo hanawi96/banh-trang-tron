@@ -1,5 +1,5 @@
 /* Bánh tráng cuộn PWA — bump SHELL_CACHE when shipping shell changes */
-const SHELL_CACHE = "bt-shell-v162";
+const SHELL_CACHE = "bt-shell-v165";
 /** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
 const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
@@ -39,6 +39,16 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim()),
   );
 });
+
+/** Ảnh đã tải thì dùng ngay, không hỏi mạng lại. */
+async function cacheFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const res = await fetch(request);
+  if (res && res.ok) cache.put(request, res.clone());
+  return res;
+}
 
 /** Instant from cache, refresh in background — keeps browser spinner short */
 async function staleWhileRevalidate(request, cacheName) {
@@ -89,7 +99,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   if (url.pathname.startsWith("/images/")) {
-    event.respondWith(staleWhileRevalidate(request, IMAGE_CACHE));
+    event.respondWith(cacheFirst(request, IMAGE_CACHE));
     return;
   }
 

@@ -1173,63 +1173,43 @@ function clearComposeInvalid(root = orderModal) {
 const OPTIONAL_FIELDS = {
   create: {
     actions: "order-optional-actions",
-    phoneBtn: "show-order-phone",
     noteBtn: "show-order-note",
-    phoneField: "order-phone-field",
     noteField: "order-note-field",
-    phoneInput: "customer-phone",
     noteInput: "order-note",
   },
   edit: {
     actions: "edit-order-optional-actions",
-    phoneBtn: "show-edit-order-phone",
     noteBtn: "show-edit-order-note",
-    phoneField: "edit-order-phone-field",
     noteField: "edit-order-note-field",
-    phoneInput: "edit-order-phone",
     noteInput: "edit-order-note",
   },
 };
 
-/** Ẩn/hiện SĐT + note theo dữ liệu sẵn có */
-function syncOptionalFields(scope, { phone = "", note = "" } = {}) {
+/** Ẩn/hiện note theo dữ liệu sẵn có */
+function syncOptionalFields(scope, { note = "" } = {}) {
   const cfg = OPTIONAL_FIELDS[scope];
   if (!cfg) return;
-  const phoneVal = String(phone || "").trim();
   const noteVal = String(note || "").trim();
-  const phoneInput = $(cfg.phoneInput);
   const noteInput = $(cfg.noteInput);
-  if (phoneInput) phoneInput.value = phoneVal;
   if (noteInput) noteInput.value = noteVal;
-
-  const showPhone = Boolean(phoneVal);
   const showNote = Boolean(noteVal);
-  $(cfg.phoneField)?.classList.toggle("hidden", !showPhone);
   $(cfg.noteField)?.classList.toggle("hidden", !showNote);
-  $(cfg.phoneBtn)?.classList.toggle("hidden", showPhone);
   $(cfg.noteBtn)?.classList.toggle("hidden", showNote);
-  $(cfg.actions)?.classList.toggle("hidden", showPhone && showNote);
+  $(cfg.actions)?.classList.toggle("hidden", showNote);
 }
 
 function revealOptionalField(scope, kind) {
   const cfg = OPTIONAL_FIELDS[scope];
   if (!cfg) return;
-  if (kind === "phone") {
-    $(cfg.phoneField)?.classList.remove("hidden");
-    $(cfg.phoneBtn)?.classList.add("hidden");
-    requestAnimationFrame(() => $(cfg.phoneInput)?.focus());
-  } else if (kind === "note") {
-    $(cfg.noteField)?.classList.remove("hidden");
-    $(cfg.noteBtn)?.classList.add("hidden");
-    requestAnimationFrame(() => $(cfg.noteInput)?.focus());
-  }
-  const phoneHidden = $(cfg.phoneBtn)?.classList.contains("hidden");
-  const noteHidden = $(cfg.noteBtn)?.classList.contains("hidden");
-  if (phoneHidden && noteHidden) $(cfg.actions)?.classList.add("hidden");
+  if (kind !== "note") return;
+  $(cfg.noteField)?.classList.remove("hidden");
+  $(cfg.noteBtn)?.classList.add("hidden");
+  $(cfg.actions)?.classList.add("hidden");
+  requestAnimationFrame(() => $(cfg.noteInput)?.focus());
 }
 
 function resetOrderOptionalFields() {
-  syncOptionalFields("create", { phone: "", note: "" });
+  syncOptionalFields("create", { note: "" });
 }
 
 function revealOrderOptionalField(kind) {
@@ -1276,11 +1256,7 @@ function resolveItemImage(item) {
 }
 
 function itemImageUrl(item) {
-  const p = products.find((x) => x.id === item.id);
-  const path = imagesPath(resolveItemImage(item));
-  if (!path) return "";
-  const bust = p?.updated_at ? `?v=${p.updated_at}` : "";
-  return `${path}${bust}`;
+  return imagesPath(resolveItemImage(item));
 }
 
 /** @returns {'pending'|'printed'|'done'} */
@@ -2225,6 +2201,7 @@ function paintOrdersBoard() {
   }
 
   const frag = document.createDocumentFragment();
+  let orderThumbN = 0;
   let lastVillageKey = null;
   let lastSearchBlock = null;
   const searching = Boolean(foldVn(orderSearchQuery));
@@ -2288,8 +2265,12 @@ function paintOrdersBoard() {
       .map((i, idx) => {
         const sizeText = sizeLabel(i.size);
         const imgSrc = itemImageUrl(i);
+        const eager = orderThumbN < 8;
+        orderThumbN += 1;
         const thumb = imgSrc
-          ? `<img class="order-item-thumb" src="${imgSrc}" alt="" width="48" height="48" decoding="async" loading="lazy" />`
+          ? `<img class="order-item-thumb" src="${imgSrc}" alt="" width="48" height="48" decoding="async" ${
+              eager ? `fetchpriority="high" loading="eager"` : `loading="lazy"`
+            } />`
           : `<div class="order-item-thumb order-item-thumb-empty" aria-hidden="true"></div>`;
         return `<div class="order-item-row">
           ${thumb}
@@ -2871,6 +2852,8 @@ function slotLabel(slot) {
 const VILLAGES = [
   "Đông Cao",
   "Tráng Việt",
+  "Thường Lệ",
+  "Liễu Trì",
   "Văn Quán",
   "Văn Khê",
   "Hạ Lôi",
@@ -2997,7 +2980,6 @@ function openEditOrderModal(order, { clone = false } = {}) {
   $("edit-order-title").textContent = clone ? "Nhân bản đơn hàng" : "Sửa đơn hàng";
   $("edit-order-customer").value = formatCustomerName(order.customer);
   syncOptionalFields("edit", {
-    phone: order.phone || "",
     note: order.note || "",
   });
   const allowedDates = new Set(deliveryDateOptions().map((o) => o.ymd));
@@ -4478,7 +4460,6 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     delivery_date,
     village,
     customer,
-    phone: $("edit-order-phone").value.trim(),
     note: $("edit-order-note").value.trim(),
   };
   const label = saveEditOrderBtn?.querySelector(".btn-label");
@@ -4557,16 +4538,8 @@ $("open-create-product")?.addEventListener("click", () => {
   openCreateProductModal();
 });
 
-$("show-order-phone")?.addEventListener("click", () => {
-  revealOptionalField("create", "phone");
-});
-
 $("show-order-note")?.addEventListener("click", () => {
   revealOptionalField("create", "note");
-});
-
-$("show-edit-order-phone")?.addEventListener("click", () => {
-  revealOptionalField("edit", "phone");
 });
 
 $("show-edit-order-note")?.addEventListener("click", () => {
@@ -4701,7 +4674,6 @@ $("order-form").addEventListener("submit", async (e) => {
         delivery_date,
         village,
         customer,
-        phone: $("customer-phone").value.trim(),
         note: $("order-note").value.trim(),
       }),
     });

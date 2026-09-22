@@ -827,10 +827,12 @@ app.get("/api/orders", async (c) => {
                 CASE village
                   WHEN 'Đông Cao' THEN 0
                   WHEN 'Tráng Việt' THEN 1
-                  WHEN 'Văn Quán' THEN 2
-                  WHEN 'Văn Khê' THEN 3
-                  WHEN 'Hạ Lôi' THEN 4
-                  WHEN 'Tiền Phong' THEN 5
+                  WHEN 'Thường Lệ' THEN 2
+                  WHEN 'Liễu Trì' THEN 3
+                  WHEN 'Văn Quán' THEN 4
+                  WHEN 'Văn Khê' THEN 5
+                  WHEN 'Hạ Lôi' THEN 6
+                  WHEN 'Tiền Phong' THEN 7
                   ELSE 9
                 END ASC,
                 CASE delivery_slot
@@ -1039,18 +1041,23 @@ app.put("/api/orders/:id", async (c) => {
   const total = items.reduce((sum, i) => sum + i.qty * i.price, 0);
   const note = (body.note ?? "").trim().slice(0, 300);
   const customer = (body.customer ?? "").trim().slice(0, 120);
-  const phone = (body.phone ?? "").trim().slice(0, 20);
   if (!customer) {
     return c.json({ error: "Nhập tên khách hàng" }, 400);
   }
 
   const existing = await db.execute({
-    sql: `SELECT id, delivery_date, delivery_slot, items_json FROM orders WHERE id = ? LIMIT 1`,
+    sql: `SELECT id, delivery_date, delivery_slot, phone, items_json FROM orders WHERE id = ? LIMIT 1`,
     args: [id],
   });
   if (!existing.rows.length) {
     return c.json({ error: "Không tìm thấy đơn" }, 404);
   }
+  const phone =
+    typeof body.phone === "string"
+      ? body.phone.trim().slice(0, 20)
+      : existing.rows[0]?.phone
+        ? String(existing.rows[0].phone)
+        : "";
   const prevDate = existing.rows[0]?.delivery_date
     ? String(existing.rows[0].delivery_date)
     : "";
@@ -1296,6 +1303,11 @@ const IMAGE_TYPES: Record<string, string> = {
 };
 
 app.get("/images/:key{.+}", async (c) => {
+  const cache = caches.default;
+  const cacheKey = new Request(c.req.url, { method: "GET" });
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
   let key = c.req.param("key") || "";
   try {
     key = decodeURIComponent(key);
@@ -1316,10 +1328,12 @@ app.get("/images/:key{.+}", async (c) => {
 
   const headers = new Headers();
   headers.set("Content-Type", contentType);
-  headers.set("Cache-Control", "public, max-age=604800, immutable");
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
   if (obj.httpEtag) headers.set("ETag", obj.httpEtag);
 
-  return new Response(obj.body, { headers });
+  const response = new Response(obj.body, { headers });
+  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
 });
 
 export default app;
