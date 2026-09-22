@@ -52,7 +52,9 @@ async function runEnsureSchema(db: Client): Promise<void> {
     ],
     "write",
   );
-  // Existing DBs may lack newer columns — add before any index that depends on them
+  // Một lần đọc cột. Không ALTER lại cột đã có — mỗi ALTER lỗi là một vòng Turso.
+  const info = await db.execute("PRAGMA table_info(orders)");
+  const have = new Set(info.rows.map((row) => String(row.name)));
   for (const col of [
     "phone TEXT",
     "delivery_slot TEXT",
@@ -63,11 +65,9 @@ async function runEnsureSchema(db: Client): Promise<void> {
     "paid_at INTEGER",
     "village TEXT",
   ]) {
-    try {
-      await db.execute(`ALTER TABLE orders ADD COLUMN ${col}`);
-    } catch {
-      // column already exists
-    }
+    const name = col.split(" ")[0];
+    if (have.has(name)) continue;
+    await db.execute(`ALTER TABLE orders ADD COLUMN ${col}`);
   }
   try {
     await db.execute(

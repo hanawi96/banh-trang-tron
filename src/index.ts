@@ -32,6 +32,11 @@ import {
 
 const app = new Hono<{ Bindings: Env }>();
 
+app.use("/api/*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store");
+});
+
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_IMAGE = new Set([
   "image/webp",

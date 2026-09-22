@@ -1,5 +1,5 @@
 /* Bánh tráng cuộn PWA — bump SHELL_CACHE when shipping shell changes */
-const SHELL_CACHE = "bt-shell-v148";
+const SHELL_CACHE = "bt-shell-v150";
 /** Images kept across shell bumps — avoid re-hitting R2 after every CSS/JS deploy */
 const IMAGE_CACHE = "bt-images-v1";
 const PRECACHE = [
@@ -85,11 +85,8 @@ self.addEventListener("fetch", (event) => {
   if (url.protocol === "blob:" || url.protocol === "data:") return;
   if (url.origin !== self.location.origin) return;
 
-  // API always network — never stale orders/stats
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(request));
-    return;
-  }
+  // API do trình duyệt gọi thẳng, không qua cache của app.
+  if (url.pathname.startsWith("/api/")) return;
 
   if (url.pathname.startsWith("/images/")) {
     event.respondWith(staleWhileRevalidate(request, IMAGE_CACHE));

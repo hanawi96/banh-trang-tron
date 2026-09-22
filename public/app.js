@@ -2124,7 +2124,6 @@ function renderOrders(orders) {
     const skeletonOnScreen = Boolean(ordersEl?.querySelector(".order-skeleton"));
     ordersCache = next;
     if (!ordersFetchedDay) ordersFetchedDay = day;
-    writeOrdersCache(ordersCache);
     if (same && !skeletonOnScreen) {
       updateOrderFilterCounts();
       return;
@@ -2478,57 +2477,18 @@ async function setOrderStatus(id, status, opts = {}) {
   if (old === next) return;
   const setPrinted = Boolean(opts.setPrinted) && next === "done";
 
-  const snap = {
-    status: prev.status,
-    printed_at: prev.printed_at ?? null,
-    delivered_at: prev.delivered_at ?? null,
-    paid_at: prev.paid_at ?? null,
-  };
-  const countSnap = { open: serverOpenCount, done: doneCount };
-  if (isOpenStatus(old) && next === "done") {
-    adjustOrderCounts({ openDelta: -1, doneDelta: 1 });
-  } else if (old === "done" && isOpenStatus(next)) {
-    adjustOrderCounts({ openDelta: 1, doneDelta: -1 });
-  }
   statusBusy.add(id);
-  applyLocalTimeline(prev, next, { setPrinted });
-  if (next === "done") selectedOrderIds.delete(id);
-  syncDoneOrdersCache(prev);
-  ensureOrderOnBoard(prev);
-  if (next === "done") {
-    // Board upcoming vẫn có thể giữ bản ghi done trong cửa sổ ngày — ok
-    const idx = ordersCache.findIndex((o) => o.id === id);
-    if (idx >= 0) ordersCache[idx] = prev;
-  }
-  paintOrdersBoard();
-
   try {
-    const data = await api(`/api/orders/${encodeURIComponent(id)}/status`, {
+    await api(`/api/orders/${encodeURIComponent(id)}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status: next, setPrinted }),
     });
-    if (data && "printed_at" in data) prev.printed_at = data.printed_at;
-    if (data && "delivered_at" in data) prev.delivered_at = data.delivered_at;
-    if (data && "paid_at" in data) prev.paid_at = data.paid_at;
-    syncDoneOrdersCache(prev);
-    ensureOrderOnBoard(prev);
-    paintOrdersBoard();
-    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
-      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
-    }
+    if (next === "done") selectedOrderIds.delete(id);
+    await refreshOrdersView();
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    prev.status = snap.status;
-    prev.printed_at = snap.printed_at;
-    prev.delivered_at = snap.delivered_at;
-    prev.paid_at = snap.paid_at;
-    serverOpenCount = countSnap.open;
-    doneCount = countSnap.done;
-    syncDoneOrdersCache(prev);
-    ensureOrderOnBoard(prev);
-    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   } finally {
     statusBusy.delete(id);
@@ -2576,12 +2536,6 @@ function removeOrdersFromCaches(ids) {
 async function deleteOrders(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return;
-  const snapshot = ordersCache.slice();
-  const doneSnapshot = doneOrdersCache.slice();
-  const countSnap = { open: serverOpenCount, done: doneCount };
-  removeOrdersFromCaches(unique);
-  paintOrdersBoard();
-
   try {
     if (unique.length === 1) {
       await api(`/api/orders/${encodeURIComponent(unique[0])}`, { method: "DELETE" });
@@ -2591,82 +2545,46 @@ async function deleteOrders(ids) {
         body: JSON.stringify({ ids: unique }),
       });
     }
+    for (const id of unique) selectedOrderIds.delete(id);
     toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
+    await refreshOrdersView();
     loadProducts().catch(() => {});
-    if (orderFilter === "done") {
-      loadDoneOrders({ page: donePage }).catch(() => {});
-    }
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    ordersCache = snapshot;
-    doneOrdersCache = doneSnapshot;
-    serverOpenCount = countSnap.open;
-    doneCount = countSnap.done;
-    paintOrdersBoard();
     toast(err.message || "Không xóa được");
   }
 }
 
 async function markOrderPaid(id) {
-  const order = findOrder(id);
-  if (!order) return;
-  const snapshot = order.paid_at;
-  order.paid_at = Date.now();
-  syncDoneOrdersCache(order);
-  paintOrdersBoard();
-
   try {
-    const data = await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
+    await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
       method: "PATCH",
       body: JSON.stringify({ paid: true }),
     });
-    if (data && "paid_at" in data) order.paid_at = data.paid_at;
-    syncDoneOrdersCache(order);
-    paintOrdersBoard();
-    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
-      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
-    }
+    await refreshOrdersView();
     toast("Đã đánh dấu thanh toán");
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    order.paid_at = snapshot;
-    syncDoneOrdersCache(order);
-    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   }
 }
 
 async function unmarkOrderPaid(id) {
-  const order = findOrder(id);
-  if (!order) return;
-  const snapshot = order.paid_at;
-  order.paid_at = 0;
-  syncDoneOrdersCache(order);
-  paintOrdersBoard();
-
   try {
-    const data = await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
+    await api(`/api/orders/${encodeURIComponent(id)}/paid`, {
       method: "PATCH",
       body: JSON.stringify({ paid: false }),
     });
-    if (data && "paid_at" in data) order.paid_at = data.paid_at;
-    syncDoneOrdersCache(order);
-    paintOrdersBoard();
-    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
-      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
-    }
+    await refreshOrdersView();
     toast("Đã hủy đánh dấu thanh toán");
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    order.paid_at = snapshot;
-    syncDoneOrdersCache(order);
-    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   }
 }
@@ -2684,39 +2602,8 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     .filter((o) => o && normalizeStatus(o.status) !== next);
   if (!targets.length) return;
 
-  const snapshot = targets.map((o) => ({
-    id: o.id,
-    status: o.status,
-    printed_at: o.printed_at ?? null,
-    delivered_at: o.delivered_at ?? null,
-    paid_at: o.paid_at ?? null,
-  }));
-  const countSnap = { open: serverOpenCount, done: doneCount };
-  let openDelta = 0;
-  let doneDelta = 0;
-  for (const o of targets) {
-    const old = normalizeStatus(o.status);
-    if (isOpenStatus(old) && next === "done") {
-      openDelta -= 1;
-      doneDelta += 1;
-    } else if (old === "done" && isOpenStatus(next)) {
-      openDelta += 1;
-      doneDelta -= 1;
-    }
-  }
-  adjustOrderCounts({ openDelta, doneDelta });
-  for (const o of targets) {
-    applyLocalTimeline(o, next, { setPrinted });
-    if (next === "done") selectedOrderIds.delete(o.id);
-    syncDoneOrdersCache(o);
-    ensureOrderOnBoard(o);
-    const idx = ordersCache.findIndex((x) => x.id === o.id);
-    if (idx >= 0) ordersCache[idx] = o;
-  }
-  paintOrdersBoard();
-
   try {
-    const data = await api("/api/orders/status-bulk", {
+    await api("/api/orders/status-bulk", {
       method: "POST",
       body: JSON.stringify({
         ids: targets.map((o) => o.id),
@@ -2724,46 +2611,19 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
         setPrinted,
       }),
     });
-    // Đồng bộ mốc giờ từ server (cùng unix ms) nếu client lệch giây
-    if (data?.at && (next === "printed" || next === "done")) {
-      for (const o of targets) {
-        const snap = snapshot.find((s) => s.id === o.id);
-        if (
-          (next === "printed" || setPrinted) &&
-          !(Number(snap?.printed_at) > 0)
-        ) {
-          o.printed_at = data.at;
-        }
-        if (next === "done") o.delivered_at = data.at;
-        syncDoneOrdersCache(o);
-      }
-      paintOrdersBoard();
+    if (next === "done") {
+      for (const o of targets) selectedOrderIds.delete(o.id);
     }
+    await refreshOrdersView();
     if (!opts.silent) {
       if (next === "done") toast(`Đã giao ${targets.length} đơn`);
       else if (next === "printed") toast(`Đã in ${targets.length} đơn`);
       else toast("Đã hoàn tác");
     }
-    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
-      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
-    }
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    serverOpenCount = countSnap.open;
-    doneCount = countSnap.done;
-    for (const s of snapshot) {
-      const o = findOrder(s.id);
-      if (!o) continue;
-      o.status = s.status;
-      o.printed_at = s.printed_at;
-      o.delivered_at = s.delivered_at;
-      o.paid_at = s.paid_at;
-      syncDoneOrdersCache(o);
-      ensureOrderOnBoard(o);
-    }
-    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   }
 }
@@ -2779,20 +2639,6 @@ async function setOrdersPaidBulk(ids, paid, opts = {}) {
     .filter((o) => o && Boolean(o.paid_at) !== paid);
   if (!targets.length) return;
 
-  const snapshot = targets.map((o) => ({
-    id: o.id,
-    paid_at: o.paid_at ?? null,
-  }));
-
-  const paid_at = paid ? Date.now() : null;
-  for (const o of targets) {
-    o.paid_at = paid_at;
-    syncDoneOrdersCache(o);
-    const idx = ordersCache.findIndex((x) => x.id === o.id);
-    if (idx >= 0) ordersCache[idx] = o;
-  }
-  paintOrdersBoard();
-
   try {
     await api("/api/orders/paid-bulk", {
       method: "POST",
@@ -2801,9 +2647,7 @@ async function setOrdersPaidBulk(ids, paid, opts = {}) {
         paid,
       }),
     });
-    if ((orderFilter === "done") && !foldVn(orderSearchQuery)) {
-      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
-    }
+    await refreshOrdersView();
     if (!opts.silent) {
       toast(paid ? `Đã đánh dấu ${targets.length} đơn đã thanh toán` : `Đã hủy thanh toán ${targets.length} đơn`);
     }
@@ -2811,15 +2655,6 @@ async function setOrdersPaidBulk(ids, paid, opts = {}) {
       loadStats().catch(() => {});
     }
   } catch (err) {
-    for (const s of snapshot) {
-      const o = findOrder(s.id);
-      if (!o) continue;
-      o.paid_at = s.paid_at;
-      syncDoneOrdersCache(o);
-      const idx = ordersCache.findIndex((x) => x.id === o.id);
-      if (idx >= 0) ordersCache[idx] = o;
-    }
-    paintOrdersBoard();
     toast(err.message || "Không cập nhật được");
   }
 }
@@ -2863,7 +2698,7 @@ function setTab(tab, { fromUrl = false } = {}) {
   // Only refetch when user switches into the tab (not when already there)
   if (same && prev === tab) return;
   if (tab === "orders") {
-    if (prev !== "orders") loadOrders().catch(() => {});
+    if (prev !== "orders") refreshOrdersView().catch(() => {});
   } else if (tab === "products") {
     renderProductList(menuEl, { manage: true });
   } else if (tab === "stats") {
@@ -3375,8 +3210,9 @@ async function api(path, opts = {}) {
     headers["Content-Type"] = "application/json";
   }
   const res = await fetch(path, {
-    credentials: "same-origin",
     ...opts,
+    credentials: "same-origin",
+    cache: "no-store",
     headers,
   });
   const data = await res.json().catch(() => ({}));
@@ -3404,6 +3240,23 @@ async function loadProducts() {
     productsLoadPromise = null;
   });
   return productsLoadPromise;
+}
+
+/** Luôn vẽ lại đúng tab đang mở từ server, không ghép cache tay. */
+async function refreshOrdersView() {
+  const q = String(orderSearchQuery || "").trim();
+  if (q) {
+    await Promise.all([loadOrders(), runOrderSearch()]);
+    return;
+  }
+  if (orderFilter === "done") {
+    await Promise.all([
+      loadOrders(),
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }),
+    ]);
+    return;
+  }
+  await loadOrders();
 }
 
 async function loadOrders() {
@@ -3787,18 +3640,17 @@ function applyStatsDatePicker() {
 
 /** Show shell immediately; refresh data in background (never block paint on API) */
 async function enterApp() {
+  try {
+    localStorage.removeItem(ORDERS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
   const cachedProducts = readProductCache();
-  const cachedOrders = readOrdersCache();
 
   if (cachedProducts?.length) {
     setProducts(cachedProducts, { cache: false });
   }
-  if (cachedOrders) {
-    ordersFetchedDay = vnDayKey();
-    renderOrders(cachedOrders);
-  } else {
-    showOrdersSkeleton();
-  }
+  showOrdersSkeleton();
 
   revealApp();
 
@@ -4584,7 +4436,7 @@ $("edit-order-form").addEventListener("submit", async (e) => {
       closeEditOrderModal();
       toast("Đã cập nhật đơn");
     }
-    await Promise.all([loadOrders(), loadProducts()]);
+    await Promise.all([refreshOrdersView(), loadProducts()]);
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
@@ -4751,7 +4603,7 @@ $("order-form").addEventListener("submit", async (e) => {
     clearComposeInvalid(orderModal);
     closeOrderModal();
     toast("Đã tạo đơn");
-    await Promise.all([loadOrders(), loadProducts()]);
+    await Promise.all([refreshOrdersView(), loadProducts()]);
   } catch (err) {
     toast(err.message || "Không tạo được đơn");
   } finally {

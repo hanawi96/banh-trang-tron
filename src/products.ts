@@ -136,6 +136,8 @@ export async function ensureProducts(db: Client): Promise<void> {
     )
   `);
 
+  const info = await db.execute("PRAGMA table_info(products)");
+  const have = new Set(info.rows.map((row) => String(row.name)));
   for (const col of [
     "cost INTEGER NOT NULL DEFAULT 0",
     "price_large INTEGER NOT NULL DEFAULT 0",
@@ -143,6 +145,8 @@ export async function ensureProducts(db: Client): Promise<void> {
     "sold_count INTEGER NOT NULL DEFAULT 0",
     "category TEXT NOT NULL DEFAULT 'banh-trang'",
   ]) {
+    const name = col.split(" ")[0];
+    if (have.has(name)) continue;
     try {
       await db.execute(`ALTER TABLE products ADD COLUMN ${col}`);
       // Cột sold_count mới → backfill từ đơn hiện có

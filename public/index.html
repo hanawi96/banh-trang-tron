@@ -21,7 +21,7 @@
     <script>
       (() => {
         const j = (u) =>
-          fetch(u, { credentials: "same-origin" })
+          fetch(u, { credentials: "same-origin", cache: "no-store" })
             .then((r) => (r.ok ? r.json() : Promise.reject()))
             .catch(() => null);
         window.__BT_PREFETCH = {
