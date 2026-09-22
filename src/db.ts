@@ -40,6 +40,7 @@ async function runEnsureSchema(db: Client): Promise<void> {
         price_large INTEGER NOT NULL DEFAULT 0,
         cost_large INTEGER NOT NULL DEFAULT 0,
         image TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'banh-trang',
         sort_order INTEGER NOT NULL DEFAULT 0,
         sold_count INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
@@ -98,6 +99,8 @@ export type OrderItem = {
   price: number;
   size?: OrderSize;
   image?: string;
+  /** Nhóm tại lúc ghi đơn. Đơn cũ chưa có thì suy ra từ sản phẩm. */
+  category?: "banh-trang" | "tra-sua";
 };
 
 export type DeliverySlot = "trua" | "chieu";

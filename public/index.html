@@ -234,19 +234,6 @@
                 aria-label="Ngày giao"
               ></div>
             </fieldset>
-            <fieldset class="slot-field">
-              <legend>Buổi giao</legend>
-              <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
-                <label class="slot-option">
-                  <input type="radio" name="delivery_slot" value="chieu" checked />
-                  <span>Giao chiều</span>
-                </label>
-                <label class="slot-option">
-                  <input type="radio" name="delivery_slot" value="trua" />
-                  <span>Giao trưa</span>
-                </label>
-              </div>
-            </fieldset>
             <fieldset class="slot-field village-field">
               <legend>Thôn giao <em class="req-mark">*</em></legend>
               <div
@@ -355,19 +342,6 @@
                 role="radiogroup"
                 aria-label="Ngày giao"
               ></div>
-            </fieldset>
-            <fieldset class="slot-field">
-              <legend>Buổi giao</legend>
-              <div class="slot-options" role="radiogroup" aria-label="Buổi giao">
-                <label class="slot-option">
-                  <input type="radio" name="edit_delivery_slot" value="chieu" />
-                  <span>Giao chiều</span>
-                </label>
-                <label class="slot-option">
-                  <input type="radio" name="edit_delivery_slot" value="trua" />
-                  <span>Giao trưa</span>
-                </label>
-              </div>
             </fieldset>
             <fieldset class="slot-field village-field">
               <legend>Thôn giao <em class="req-mark">*</em></legend>
@@ -487,6 +461,19 @@
               required
             />
           </label>
+          <fieldset class="slot-field category-field">
+            <legend>Nhóm sản phẩm</legend>
+            <div class="slot-options category-options" role="radiogroup" aria-label="Nhóm sản phẩm">
+              <label class="slot-option">
+                <input type="radio" name="product_category" value="banh-trang" checked />
+                <span>Bánh tráng</span>
+              </label>
+              <label class="slot-option">
+                <input type="radio" name="product_category" value="tra-sua" />
+                <span>Trà sữa</span>
+              </label>
+            </div>
+          </fieldset>
           <div class="field-grid">
             <label class="field">
               <span>Giá bán · Nhỏ</span>

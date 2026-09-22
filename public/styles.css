@@ -199,6 +199,47 @@ html.booting .tabbar {
   gap: 12px;
 }
 
+.product-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 2px 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+
+.product-group-head:first-child {
+  margin-top: 0;
+}
+
+.product-group-head::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(12, 122, 82, 0.12);
+}
+
+.product-group-tra-sua {
+  color: #8a4b16;
+}
+
+.product-group-tra-sua::before {
+  background: #d08a45;
+  box-shadow: 0 0 0 3px rgba(208, 138, 69, 0.16);
+}
+
+.product-group-empty {
+  margin: -4px 2px 2px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .product {
   position: relative;
   display: grid;
@@ -852,6 +893,10 @@ body.confirm-open .order-bulk-popup {
   background: #fff;
   color: var(--accent-2);
   box-shadow: 0 1px 3px rgba(16, 35, 28, 0.1);
+}
+
+.category-options .slot-option input[value="tra-sua"]:checked + span {
+  color: #8a4b16;
 }
 
 .slot-option:active span {
@@ -2289,6 +2334,69 @@ body.bulk-open .tabbar {
   font-weight: 750;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stats-cat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stats-cat-card strong {
+  font-size: 1.02rem;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.stats-cat-banh {
+  background: linear-gradient(165deg, #f3fbf7 0%, #fff 70%);
+  border-color: rgba(12, 122, 82, 0.22);
+}
+
+.stats-cat-banh strong {
+  color: #0a5f40;
+}
+
+.stats-cat-tra {
+  background: linear-gradient(165deg, #fff6ee 0%, #fff 70%);
+  border-color: rgba(176, 106, 46, 0.24);
+}
+
+.stats-cat-tra strong {
+  color: #8a4b16;
+}
+
+.stats-cat-bar {
+  display: flex;
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e6eeea;
+}
+
+.stats-cat-bar-banh,
+.stats-cat-bar-tra {
+  height: 100%;
+  flex: none;
+}
+
+.stats-cat-bar-banh {
+  background: linear-gradient(90deg, #0c7a52, #149a68);
+}
+
+.stats-cat-bar-tra {
+  background: linear-gradient(90deg, #e0a15d, #c47a3a);
+}
+
+.stats-cat-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
   color: var(--muted);
 }
 

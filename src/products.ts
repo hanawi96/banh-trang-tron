@@ -1,5 +1,12 @@
 import type { Client } from "@libsql/client/web";
 
+export const PRODUCT_CATEGORIES = ["banh-trang", "tra-sua"] as const;
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+
+export function parseProductCategory(raw: unknown): ProductCategory {
+  return raw === "tra-sua" ? "tra-sua" : "banh-trang";
+}
+
 export type Product = {
   id: string;
   name: string;
@@ -8,6 +15,7 @@ export type Product = {
   price_large: number;
   cost_large: number;
   image: string;
+  category: ProductCategory;
   sort_order: number;
   /** Tổng số phần đã đặt (mọi đơn) — không phụ thuộc đã giao */
   sold_count: number;
@@ -57,6 +65,7 @@ const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
     price_large: 30000,
     cost_large: 15000,
     image: "bt-tron.webp",
+    category: "banh-trang",
     sort_order: 1,
   },
   {
@@ -67,6 +76,7 @@ const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
     price_large: 35000,
     cost_large: 18000,
     image: "bt-bo.webp",
+    category: "banh-trang",
     sort_order: 2,
   },
   {
@@ -77,6 +87,7 @@ const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
     price_large: 25000,
     cost_large: 12000,
     image: "bt-tac.webp",
+    category: "banh-trang",
     sort_order: 3,
   },
   {
@@ -87,6 +98,7 @@ const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
     price_large: 30000,
     cost_large: 15000,
     image: "bt-xoai.webp",
+    category: "banh-trang",
     sort_order: 4,
   },
 ];
@@ -117,6 +129,7 @@ export async function ensureProducts(db: Client): Promise<void> {
       price_large INTEGER NOT NULL DEFAULT 0,
       cost_large INTEGER NOT NULL DEFAULT 0,
       image TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'banh-trang',
       sort_order INTEGER NOT NULL DEFAULT 0,
       sold_count INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
@@ -128,6 +141,7 @@ export async function ensureProducts(db: Client): Promise<void> {
     "price_large INTEGER NOT NULL DEFAULT 0",
     "cost_large INTEGER NOT NULL DEFAULT 0",
     "sold_count INTEGER NOT NULL DEFAULT 0",
+    "category TEXT NOT NULL DEFAULT 'banh-trang'",
   ]) {
     try {
       await db.execute(`ALTER TABLE products ADD COLUMN ${col}`);
@@ -168,8 +182,8 @@ export async function ensureProducts(db: Client): Promise<void> {
     for (const p of SEED) {
       await db.execute({
         sql: `INSERT INTO products
-              (id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+              (id, name, price, cost, price_large, cost_large, image, category, sort_order, sold_count, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
         args: [
           p.id,
           p.name,
@@ -178,12 +192,13 @@ export async function ensureProducts(db: Client): Promise<void> {
           p.price_large,
           p.cost_large,
           p.image,
+          p.category,
           p.sort_order,
           now,
         ],
       });
     }
-    productsReady = true;
+    await finishProductMigrations(db);
     return;
   }
 
@@ -227,7 +242,91 @@ export async function ensureProducts(db: Client): Promise<void> {
       });
     }
   }
+  await finishProductMigrations(db);
+}
+
+/** Gắn category cho dòng đơn cũ một lần, rồi ghi cờ để lần sau không quét lại. */
+async function finishProductMigrations(db: Client): Promise<void> {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+  const flag = await db.execute({
+    sql: `SELECT value FROM app_meta WHERE key = ? LIMIT 1`,
+    args: ["item_category_v1"],
+  });
+  if (!flag.rows.length) {
+    const catalog = await db.execute(`SELECT id, category FROM products`);
+    const map = new Map<string, ProductCategory>();
+    for (const row of catalog.rows) {
+      map.set(String(row.id), parseProductCategory(row.category));
+    }
+    const orders = await db.execute(`SELECT id, items_json FROM orders`);
+    const stmts: { sql: string; args: string[] }[] = [];
+    for (const row of orders.rows) {
+      let items: Record<string, unknown>[] = [];
+      try {
+        const parsed = JSON.parse(String(row.items_json || "[]"));
+        if (!Array.isArray(parsed)) continue;
+        items = parsed as Record<string, unknown>[];
+      } catch {
+        continue;
+      }
+      let changed = false;
+      const next = items.map((item) => {
+        if (!item || typeof item !== "object") return item;
+        if (item.category === "banh-trang" || item.category === "tra-sua") {
+          return item;
+        }
+        changed = true;
+        return {
+          ...item,
+          category: map.get(String(item.id || "")) || "banh-trang",
+        };
+      });
+      if (!changed) continue;
+      stmts.push({
+        sql: `UPDATE orders SET items_json = ? WHERE id = ?`,
+        args: [JSON.stringify(next), String(row.id)],
+      });
+    }
+    stmts.push({
+      sql: `INSERT INTO app_meta (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO NOTHING`,
+      args: ["item_category_v1", "1"],
+    });
+    await db.batch(stmts, "write");
+  }
   productsReady = true;
+}
+
+/** Giữ category có sẵn trên dòng; dòng mới lấy theo sản phẩm hiện tại. */
+export async function stampItemCategories<T extends { id: string; category?: string }>(
+  db: Client,
+  items: T[],
+): Promise<(T & { category: ProductCategory })[]> {
+  await ensureProducts(db);
+  if (!items.length) return [];
+  const ids = [...new Set(items.map((item) => item.id).filter(Boolean))];
+  const map = new Map<string, ProductCategory>();
+  if (ids.length) {
+    const result = await db.execute({
+      sql: `SELECT id, category FROM products WHERE id IN (${ids.map(() => "?").join(",")})`,
+      args: ids,
+    });
+    for (const row of result.rows) {
+      map.set(String(row.id), parseProductCategory(row.category));
+    }
+  }
+  return items.map((item) => ({
+    ...item,
+    category:
+      item.category === "tra-sua" || item.category === "banh-trang"
+        ? item.category
+        : map.get(item.id) || "banh-trang",
+  }));
 }
 
 export function mapProduct(row: Record<string, unknown>): Product {
@@ -243,6 +342,7 @@ export function mapProduct(row: Record<string, unknown>): Product {
     price_large: priceLarge > 0 ? priceLarge : price + 5000,
     cost_large: costLarge > 0 ? costLarge : Math.max(0, cost + 2000),
     image: String(row.image),
+    category: parseProductCategory(row.category),
     sort_order: Number(row.sort_order ?? 0),
     sold_count: Math.max(0, Math.floor(Number(row.sold_count ?? 0)) || 0),
     updated_at: Number(row.updated_at ?? 0),
@@ -252,7 +352,7 @@ export function mapProduct(row: Record<string, unknown>): Product {
 export async function listProducts(db: Client): Promise<Product[]> {
   await ensureProducts(db);
   const result = await db.execute(
-    `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at
+    `SELECT id, name, price, cost, price_large, cost_large, image, category, sort_order, sold_count, updated_at
      FROM products
      ORDER BY sold_count DESC, sort_order ASC, name ASC`,
   );
@@ -262,7 +362,7 @@ export async function listProducts(db: Client): Promise<Product[]> {
 export async function getProduct(db: Client, id: string): Promise<Product | null> {
   await ensureProducts(db);
   const result = await db.execute({
-    sql: `SELECT id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at
+    sql: `SELECT id, name, price, cost, price_large, cost_large, image, category, sort_order, sold_count, updated_at
           FROM products WHERE id = ? LIMIT 1`,
     args: [id],
   });

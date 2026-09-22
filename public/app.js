@@ -460,10 +460,6 @@ function renderStats() {
   const profit = Number(s.profit) || 0;
   const receivedCount = Number(s.receivedCount) || 0;
   const openCount = Number(s.openCount) || 0;
-  const bySlot = s.bySlot || {};
-  const trua = bySlot.trua || { count: 0, revenue: 0 };
-  const chieu = bySlot.chieu || { count: 0, revenue: 0 };
-  const other = bySlot.other || { count: 0, revenue: 0 };
   const topProducts = Array.isArray(s.topProducts) ? s.topProducts : [];
 
   if (!deliveredCount && !receivedCount && !openCount) {
@@ -515,10 +511,7 @@ function renderStats() {
       ? `<p class="empty">Chưa có dữ liệu món.</p>`
       : `<p class="empty">Chưa có đơn đã giao để thống kê món.</p>`;
 
-  const otherNote =
-    Number(other.count) > 0
-      ? `<p class="stats-slot-note">${other.count} đơn không gán ca · ${vnd.format(other.revenue)}</p>`
-      : "";
+  const categoryHtml = categoryStatsHtml(s.byCategory);
 
   const byVillage = Array.isArray(s.byVillage) ? s.byVillage : [];
   const villageHtml = byVillage.length
@@ -553,6 +546,7 @@ function renderStats() {
         <strong>${vnd.format(profit)}</strong>
       </article>
     </div>
+    ${categoryHtml}
     <div class="stats-grid stats-grid-mgmt">
       <button type="button" class="stats-card stats-card-done stats-card-btn"${
         deliveredCount > 0 ? ` id="stats-open-delivered"` : " disabled"
@@ -575,27 +569,13 @@ function renderStats() {
       </article>
     </div>
     <div class="stats-section">
-      <h3>Theo ca đã giao</h3>
-      <div class="stats-slot-grid">
-        <article class="stats-card">
-          <span>Giao trưa</span>
-          <strong>${vnd.format(trua.revenue || 0)}</strong>
-          <small>${trua.count || 0} đơn</small>
-        </article>
-        <article class="stats-card">
-          <span>Giao chiều</span>
-          <strong>${vnd.format(chieu.revenue || 0)}</strong>
-          <small>${chieu.count || 0} đơn</small>
-        </article>
-      </div>
-      ${otherNote}
-    </div>
-    <div class="stats-section">
       <h3>Theo thôn</h3>
       <div class="stats-village-grid">${villageHtml}</div>
     </div>
     <div class="stats-section">
-      <h3>Món đã bán</h3>
+      <h3>Món đã bán${
+        topProducts.length ? ` · ${topProducts.length}` : ""
+      }</h3>
       <div class="stats-sold-list">${topHtml}</div>
     </div>
   `;
@@ -610,6 +590,44 @@ function renderStats() {
       openVillageOrdersModal(btn.getAttribute("data-stats-village") || "");
     });
   });
+}
+
+function categoryStatsHtml(byCategory) {
+  if (!byCategory || typeof byCategory !== "object") return "";
+  const banh = byCategory["banh-trang"] || {};
+  const tra = byCategory["tra-sua"] || {};
+  const banhRev = Number(banh.revenue) || 0;
+  const traRev = Number(tra.revenue) || 0;
+  const banhQty = Math.max(0, Math.floor(Number(banh.qty) || 0));
+  const traQty = Math.max(0, Math.floor(Number(tra.qty) || 0));
+  const sum = banhRev + traRev;
+  let bar = `<div class="stats-cat-bar is-empty" aria-hidden="true"></div>`;
+  let legend = `<p class="stats-cat-legend"><span>Chưa có doanh thu đã giao trong kỳ</span></p>`;
+  if (sum > 0) {
+    const banhPct = Math.round((banhRev / sum) * 100);
+    const traPct = 100 - banhPct;
+    bar = `<div class="stats-cat-bar" role="img" aria-label="Bánh tráng ${banhPct} phần trăm, trà sữa ${traPct} phần trăm">
+      <span class="stats-cat-bar-banh" style="width:${banhPct}%"></span>
+      <span class="stats-cat-bar-tra" style="width:${traPct}%"></span>
+    </div>`;
+    legend = `<p class="stats-cat-legend"><span>Bánh tráng ${banhPct}%</span><span>Trà sữa ${traPct}%</span></p>`;
+  }
+  const card = (cls, label, rev, profitValue, qty) => `
+    <article class="stats-card stats-cat-card ${cls}">
+      <span>${label}</span>
+      <strong>${vnd.format(rev)}</strong>
+      <small>Lãi ${vnd.format(profitValue)} · ${qty} suất</small>
+    </article>`;
+  return `
+    <div class="stats-section stats-cat-section">
+      <h3>Doanh thu theo nhóm</h3>
+      <div class="stats-cat-grid">
+        ${card("stats-cat-banh", "Bánh tráng", banhRev, Number(banh.profit) || 0, banhQty)}
+        ${card("stats-cat-tra", "Trà sữa", traRev, Number(tra.profit) || 0, traQty)}
+      </div>
+      ${bar}
+      ${legend}
+    </div>`;
 }
 
 function openDeliveredListModal() {
@@ -915,6 +933,29 @@ function buildProductCard(p, { manage, sold = 0 }) {
   return row;
 }
 
+const CATEGORY_GROUPS = [
+  { id: "banh-trang", label: "Bánh tráng" },
+  { id: "tra-sua", label: "Trà sữa" },
+];
+
+function productCategory(product) {
+  return product && product.category === "tra-sua" ? "tra-sua" : "banh-trang";
+}
+
+function setProductCategory(value) {
+  const next = value === "tra-sua" ? "tra-sua" : "banh-trang";
+  document.querySelectorAll('input[name="product_category"]').forEach((el) => {
+    if (el instanceof HTMLInputElement) el.checked = el.value === next;
+  });
+}
+
+function selectedProductCategory() {
+  const el = document.querySelector('input[name="product_category"]:checked');
+  return el instanceof HTMLInputElement && el.value === "tra-sua"
+    ? "tra-sua"
+    : "banh-trang";
+}
+
 function renderProductList(root, { manage }) {
   if (!root) return;
   // API đã sort sold_count DESC; client giữ thứ tự đó (và khi cache cũ thiếu field)
@@ -928,13 +969,28 @@ function renderProductList(root, { manage }) {
     return String(a.name || "").localeCompare(String(b.name || ""), "vi");
   });
   const frag = document.createDocumentFragment();
-  for (const p of list) {
-    frag.appendChild(
-      buildProductCard(p, {
-        manage,
-        sold: Math.max(0, Math.floor(Number(p.sold_count) || 0)),
-      }),
-    );
+  for (const group of CATEGORY_GROUPS) {
+    const items = list.filter((p) => productCategory(p) === group.id);
+    if (!items.length && !manage) continue;
+    const head = document.createElement("div");
+    head.className = `product-group-head product-group-${group.id}`;
+    head.textContent = group.label;
+    frag.appendChild(head);
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "product-group-empty";
+      empty.textContent = "Chưa có món";
+      frag.appendChild(empty);
+      continue;
+    }
+    for (const p of items) {
+      frag.appendChild(
+        buildProductCard(p, {
+          manage,
+          sold: Math.max(0, Math.floor(Number(p.sold_count) || 0)),
+        }),
+      );
+    }
   }
   root.replaceChildren(frag);
 }
@@ -1038,6 +1094,7 @@ function addToCart(product) {
     existing.price = price;
     existing.name = product.name;
     existing.image = product.image;
+    existing.category = productCategory(product);
   } else {
     cart.push({
       key,
@@ -1047,6 +1104,7 @@ function addToCart(product) {
       qty: addQty,
       price,
       image: product.image,
+      category: productCategory(product),
     });
   }
   setQty(product.id, 1);
@@ -1175,8 +1233,6 @@ function openCreateOrder() {
     defaultDeliveryYmd(),
   );
   renderVillageOptions("order-village-options", "village", "");
-  const chieu = document.querySelector('input[name="delivery_slot"][value="chieu"]');
-  if (chieu instanceof HTMLInputElement) chieu.checked = true;
   renderCartLines();
   renderProductList(orderMenuEl, { manage: false });
   orderModal.classList.remove("hidden");
@@ -2001,6 +2057,7 @@ function paintOrdersBoard() {
 
   if (!hasAny) {
     ordersEl.innerHTML = `<p class="empty">Chưa có đơn cần giao.</p>`;
+    paintDonePager();
     return;
   }
   if (!visible.length) {
@@ -2014,6 +2071,7 @@ function paintOrdersBoard() {
             ? `Chưa có đơn đã giao${doneTodayFilter ? " hôm nay" : ""}.`
             : "Chưa có đơn cần giao."
     }</p>`;
+    paintDonePager();
     return;
   }
 
@@ -2216,13 +2274,16 @@ function paintOrdersBoard() {
 function paintDonePager() {
   const pager = $("done-pager");
   if (!pager) return;
-  const isDoneTab = orderFilter === "done";
+  const searching = Boolean(foldVn(orderSearchQuery));
+  const isDoneTab = orderFilter === "done" && !searching;
   const totalItems = isDoneTab
     ? doneTodayFilter
       ? doneOrdersCache.filter(isDeliveredToday).length
       : doneOrdersCache.length
     : 0;
-  const show = isDoneTab && doneTotalPages > 1;
+  const pages = totalItems > 0 ? Math.ceil(totalItems / DONE_PAGE_SIZE) : 0;
+  if (isDoneTab) doneTotalPages = Math.max(1, pages);
+  const show = pages > 1;
   pager.classList.toggle("hidden", !show);
   if (!show) return;
 
@@ -2796,16 +2857,6 @@ function renderVillageOptions(rootId, inputName, selected) {
   root.classList.remove("is-invalid");
 }
 
-function selectedDeliverySlot(name = "delivery_slot") {
-  const el = document.querySelector(`input[name="${name}"]:checked`);
-  return el instanceof HTMLInputElement ? el.value : "";
-}
-
-function setDeliverySlot(name, value) {
-  const el = document.querySelector(`input[name="${name}"][value="${value}"]`);
-  if (el instanceof HTMLInputElement) el.checked = true;
-}
-
 function selectedDeliveryDate(name = "delivery_date") {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el instanceof HTMLInputElement ? el.value : "";
@@ -2886,6 +2937,10 @@ function openEditOrderModal(order, { clone = false } = {}) {
         ? productUnitPrice(catalog, size)
         : Number(item.price) || 0,
       image: item.image || resolveItemImage(item),
+      category:
+        item.category === "tra-sua" || item.category === "banh-trang"
+          ? item.category
+          : productCategory(catalog),
     };
   });
   const kicker = $("edit-order-kicker");
@@ -2906,10 +2961,6 @@ function openEditOrderModal(order, { clone = false } = {}) {
     "edit_delivery_date",
     deliveryDate,
     clone ? "" : order.delivery_date || "",
-  );
-  setDeliverySlot(
-    "edit_delivery_slot",
-    order.delivery_slot === "chieu" ? "chieu" : "trua",
   );
   renderVillageOptions(
     "edit-order-village-options",
@@ -2971,6 +3022,9 @@ function addToEditOrder(product) {
     existing.price = price;
     existing.name = product.name;
     existing.image = product.image;
+    if (existing.category !== "tra-sua" && existing.category !== "banh-trang") {
+      existing.category = productCategory(product);
+    }
   } else {
     editOrderItems.push({
       id: product.id,
@@ -2979,6 +3033,7 @@ function addToEditOrder(product) {
       qty: addQty,
       price,
       image: product.image,
+      category: productCategory(product),
     });
   }
   setQty(product.id, 1);
@@ -3049,6 +3104,7 @@ function openEditModal(product) {
   if (kicker) kicker.textContent = "Chỉnh sửa";
   $("edit-title").textContent = product.name;
   $("edit-name").value = product.name;
+  setProductCategory(productCategory(product));
   $("edit-price").value = String(product.price);
   $("edit-cost").value = String(product.cost ?? 0);
   $("edit-price-large").value = String(
@@ -3096,6 +3152,7 @@ function openCreateProductModal() {
   if (kicker) kicker.textContent = "Thêm mới";
   $("edit-title").textContent = "Sản phẩm mới";
   $("edit-name").value = "";
+  setProductCategory("banh-trang");
   $("edit-price").value = "25000";
   $("edit-cost").value = "12000";
   $("edit-price-large").value = "30000";
@@ -4187,11 +4244,6 @@ $("edit-order-form").addEventListener("submit", async (e) => {
     );
     return;
   }
-  const delivery_slot = selectedDeliverySlot("edit_delivery_slot");
-  if (delivery_slot !== "trua" && delivery_slot !== "chieu") {
-    toast("Chọn giao trưa hoặc giao chiều");
-    return;
-  }
   const village = selectedVillage("edit_village");
   if (!village) {
     showComposeIssue(
@@ -4211,8 +4263,8 @@ $("edit-order-form").addEventListener("submit", async (e) => {
       size: normalizeSize(item.size),
       image: item.image || resolveItemImage(item),
       qty: item.qty,
+      category: item.category === "tra-sua" ? "tra-sua" : "banh-trang",
     })),
-    delivery_slot,
     delivery_date,
     village,
     customer,
@@ -4369,11 +4421,6 @@ $("order-form").addEventListener("submit", async (e) => {
     );
     return;
   }
-  const delivery_slot = selectedDeliverySlot();
-  if (delivery_slot !== "trua" && delivery_slot !== "chieu") {
-    toast("Chọn giao trưa hoặc giao chiều");
-    return;
-  }
   const village = selectedVillage("village");
   if (!village) {
     showComposeIssue(
@@ -4391,6 +4438,7 @@ $("order-form").addEventListener("submit", async (e) => {
     size: line.size,
     image: line.image,
     qty: line.qty,
+    category: line.category === "tra-sua" ? "tra-sua" : "banh-trang",
   }));
   const label = saveBtn.querySelector(".btn-label");
   saveBtn.disabled = true;
@@ -4401,7 +4449,6 @@ $("order-form").addEventListener("submit", async (e) => {
       method: "POST",
       body: JSON.stringify({
         items,
-        delivery_slot,
         delivery_date,
         village,
         customer,
@@ -4457,6 +4504,7 @@ $("edit-form").addEventListener("submit", async (e) => {
   form.set("cost", String(cost));
   form.set("price_large", String(price_large));
   form.set("cost_large", String(cost_large));
+  form.set("category", selectedProductCategory());
   if (pendingImageFile) form.set("image", pendingImageFile);
 
   const label = saveProductBtn.querySelector(".btn-label");

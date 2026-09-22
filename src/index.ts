@@ -24,7 +24,10 @@ import {
   applySoldDeltas,
   getProduct,
   listProducts,
+  parseProductCategory,
   qtyByProductId,
+  stampItemCategories,
+  type ProductCategory,
 } from "./products";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -63,11 +66,15 @@ app.post("/api/products", async (c) => {
   let cost = 0;
   let price_large = 0;
   let cost_large = 0;
+  let category: ProductCategory = "banh-trang";
   let file: File | null = null;
 
   if (contentType.includes("multipart/form-data")) {
     const body = await c.req.parseBody();
     if (typeof body.name === "string") name = body.name.trim();
+    if (typeof body.category === "string") {
+      category = parseProductCategory(body.category);
+    }
     if (typeof body.price === "string" || typeof body.price === "number") {
       price = Math.floor(Number(body.price));
     }
@@ -97,6 +104,7 @@ app.post("/api/products", async (c) => {
         cost?: number;
         price_large?: number;
         cost_large?: number;
+        category?: string;
       }>()
       .catch(() => null);
     if (!body) return c.json({ error: "Dữ liệu không hợp lệ" }, 400);
@@ -109,6 +117,7 @@ app.post("/api/products", async (c) => {
     if (body.cost_large !== undefined) {
       cost_large = Math.floor(Number(body.cost_large));
     }
+    if (body.category !== undefined) category = parseProductCategory(body.category);
   }
 
   if (!name || name.length > 120) {
@@ -159,8 +168,8 @@ app.post("/api/products", async (c) => {
 
   await db.execute({
     sql: `INSERT INTO products
-          (id, name, price, cost, price_large, cost_large, image, sort_order, sold_count, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+          (id, name, price, cost, price_large, cost_large, image, category, sort_order, sold_count, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     args: [
       id,
       name,
@@ -169,6 +178,7 @@ app.post("/api/products", async (c) => {
       price_large,
       cost_large,
       key,
+      category,
       sort_order,
       updated_at,
     ],
@@ -183,6 +193,7 @@ app.post("/api/products", async (c) => {
       price_large,
       cost_large,
       image: key,
+      category,
       sort_order,
       sold_count: 0,
       updated_at,
@@ -203,12 +214,16 @@ app.put("/api/products/:id", async (c) => {
   let cost = existing.cost;
   let price_large = existing.price_large;
   let cost_large = existing.cost_large;
+  let category = existing.category;
   let image = existing.image;
   let file: File | null = null;
 
   if (contentType.includes("multipart/form-data")) {
     const body = await c.req.parseBody();
     if (typeof body.name === "string") name = body.name.trim();
+    if (typeof body.category === "string") {
+      category = parseProductCategory(body.category);
+    }
     if (typeof body.price === "string" || typeof body.price === "number") {
       price = Math.floor(Number(body.price));
     }
@@ -238,6 +253,7 @@ app.put("/api/products/:id", async (c) => {
         cost?: number;
         price_large?: number;
         cost_large?: number;
+        category?: string;
       }>()
       .catch(() => null);
     if (!body) return c.json({ error: "Dữ liệu không hợp lệ" }, 400);
@@ -250,6 +266,7 @@ app.put("/api/products/:id", async (c) => {
     if (body.cost_large !== undefined) {
       cost_large = Math.floor(Number(body.cost_large));
     }
+    if (body.category !== undefined) category = parseProductCategory(body.category);
   }
 
   if (!name || name.length > 120) {
@@ -298,9 +315,9 @@ app.put("/api/products/:id", async (c) => {
   const updated_at = Date.now();
   await db.execute({
     sql: `UPDATE products
-          SET name = ?, price = ?, cost = ?, price_large = ?, cost_large = ?, image = ?, updated_at = ?
+          SET name = ?, price = ?, cost = ?, price_large = ?, cost_large = ?, image = ?, category = ?, updated_at = ?
           WHERE id = ?`,
-    args: [name, price, cost, price_large, cost_large, image, updated_at, id],
+    args: [name, price, cost, price_large, cost_large, image, category, updated_at, id],
   });
 
   return c.json({
@@ -312,6 +329,7 @@ app.put("/api/products/:id", async (c) => {
       price_large,
       cost_large,
       image,
+      category,
       sort_order: existing.sort_order,
       sold_count: existing.sold_count,
       updated_at,
@@ -349,7 +367,7 @@ app.get("/api/stats", async (c) => {
 
   const [deliveredRes, receivedRes, openRes, products] = await Promise.all([
     db.execute({
-      sql: `SELECT id, items_json, total, customer, phone, village, delivery_slot, delivery_date,
+      sql: `SELECT id, items_json, total, customer, phone, village, delivery_date,
                    delivered_at, printed_at, created_at
             FROM orders
             WHERE status = 'done'
@@ -379,20 +397,28 @@ app.get("/api/stats", async (c) => {
       : Number(catalog.cost) || 0;
   };
   const sizeLabel = (size: OrderSize) => (size === "to" ? "To" : "Nhỏ");
+  const lineCategory = (
+    raw: unknown,
+    catalogCategory: ProductCategory | undefined,
+  ): ProductCategory => {
+    if (raw === "tra-sua" || raw === "banh-trang") return raw;
+    return catalogCategory || "banh-trang";
+  };
 
   let revenue = 0;
   let profit = 0;
-  let countTrua = 0;
-  let countChieu = 0;
-  let countOther = 0;
-  let revTrua = 0;
-  let revChieu = 0;
-  let revOther = 0;
   const villageStats = new Map<string, { count: number; revenue: number }>();
   for (const v of VILLAGES) {
     villageStats.set(v, { count: 0, revenue: 0 });
   }
   let unknownVillage = { count: 0, revenue: 0 };
+  const byCategory: Record<
+    ProductCategory,
+    { revenue: number; profit: number; qty: number }
+  > = {
+    "banh-trang": { revenue: 0, profit: 0, qty: 0 },
+    "tra-sua": { revenue: 0, profit: 0, qty: 0 },
+  };
   /** @type {Map<string, {id:string, name:string, size:OrderSize, qty:number, revenue:number, image:string}>} */
   const byProduct = new Map<
     string,
@@ -409,17 +435,6 @@ app.get("/api/stats", async (c) => {
   for (const row of deliveredRes.rows) {
     const total = Number(row.total) || 0;
     revenue += total;
-    const slot = row.delivery_slot ? String(row.delivery_slot) : "";
-    if (slot === "trua") {
-      countTrua += 1;
-      revTrua += total;
-    } else if (slot === "chieu") {
-      countChieu += 1;
-      revChieu += total;
-    } else {
-      countOther += 1;
-      revOther += total;
-    }
 
     const village = parseVillage(row.village);
     if (village) {
@@ -444,8 +459,14 @@ app.get("/api/stats", async (c) => {
       const size: OrderSize = item.size === "to" ? "to" : "nho";
       const productId = String(item.id || "");
       const cost = unitCost(productId, size, price);
-      profit += qty * (price - cost);
+      const lineProfit = qty * (price - cost);
+      profit += lineProfit;
       const catalog = productId ? productMap.get(productId) : undefined;
+      const category = lineCategory(item.category, catalog?.category);
+      const bucket = byCategory[category];
+      bucket.qty += qty;
+      bucket.revenue += qty * price;
+      bucket.profit += lineProfit;
       const key = `${productId || item.name}:${size}`;
       const prev = byProduct.get(key) || {
         id: productId,
@@ -481,8 +502,12 @@ app.get("/api/stats", async (c) => {
   ];
 
   const topProducts = [...byProduct.values()]
-    .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue)
-    .slice(0, 5)
+    .sort(
+      (a, b) =>
+        b.qty - a.qty ||
+        b.revenue - a.revenue ||
+        a.name.localeCompare(b.name, "vi"),
+    )
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -507,12 +532,8 @@ app.get("/api/stats", async (c) => {
     deliveredCount,
     receivedCount,
     openCount,
-    bySlot: {
-      trua: { count: countTrua, revenue: revTrua },
-      chieu: { count: countChieu, revenue: revChieu },
-      other: { count: countOther, revenue: revOther },
-    },
     byVillage,
+    byCategory,
     topProducts,
   });
 });
@@ -757,10 +778,8 @@ app.post("/api/orders", async (c) => {
     return c.json({ error: "Đơn trống" }, 400);
   }
 
-  const delivery_slot = body.delivery_slot === "chieu" ? "chieu" : body.delivery_slot === "trua" ? "trua" : "";
-  if (!delivery_slot) {
-    return c.json({ error: "Chọn giao trưa hoặc giao chiều" }, 400);
-  }
+  const delivery_slot =
+    body.delivery_slot === "chieu" ? "chieu" : body.delivery_slot === "trua" ? "trua" : "";
   const village = parseVillage(body.village);
   if (!village) {
     return c.json({ error: "Chọn thôn giao hàng" }, 400);
@@ -772,7 +791,9 @@ app.post("/api/orders", async (c) => {
 
   const parsedCreate = parseOrderItems(body.items);
   if (parsedCreate instanceof Response) return parsedCreate;
-  const items = parsedCreate;
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const items = await stampItemCategories(db, parsedCreate);
   const total = items.reduce((sum, i) => sum + i.qty * i.price, 0);
   const note = (body.note ?? "").trim().slice(0, 300);
   const customer = (body.customer ?? "").trim().slice(0, 120);
@@ -782,8 +803,6 @@ app.post("/api/orders", async (c) => {
   }
   const id = crypto.randomUUID();
 
-  const db = getDb(c.env);
-  await ensureSchema(db);
   await db.execute({
     sql: `INSERT INTO orders (id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
@@ -795,7 +814,7 @@ app.post("/api/orders", async (c) => {
       customer || null,
       phone || null,
       village,
-      delivery_slot,
+      delivery_slot || null,
       delivery_date,
       created_at,
     ],
@@ -837,12 +856,17 @@ function parseOrderItems(rawItems: OrderItem[]): OrderItem[] | Response {
     const image =
       typeof raw.image === "string" ? String(raw.image).trim().slice(0, 200) : "";
     const size = raw.size === "to" ? "to" : "nho";
+    const category =
+      raw.category === "tra-sua" || raw.category === "banh-trang"
+        ? raw.category
+        : undefined;
     items.push({
       id: String(raw.id).slice(0, 64),
       name: String(raw.name).slice(0, 120),
       qty,
       price,
       size,
+      ...(category ? { category } : {}),
       ...(image && !image.includes("..") ? { image } : {}),
     });
   }
@@ -867,15 +891,12 @@ app.put("/api/orders/:id", async (c) => {
     return c.json({ error: "Đơn trống" }, 400);
   }
 
-  const delivery_slot =
+  const requestedSlot =
     body.delivery_slot === "chieu"
       ? "chieu"
       : body.delivery_slot === "trua"
         ? "trua"
         : "";
-  if (!delivery_slot) {
-    return c.json({ error: "Chọn giao trưa hoặc giao chiều" }, 400);
-  }
   const village = parseVillage(body.village);
   if (!village) {
     return c.json({ error: "Chọn thôn giao hàng" }, 400);
@@ -883,7 +904,9 @@ app.put("/api/orders/:id", async (c) => {
 
   const parsed = parseOrderItems(body.items);
   if (parsed instanceof Response) return parsed;
-  const items = parsed;
+  const db = getDb(c.env);
+  await ensureSchema(db);
+  const items = await stampItemCategories(db, parsed);
   const total = items.reduce((sum, i) => sum + i.qty * i.price, 0);
   const note = (body.note ?? "").trim().slice(0, 300);
   const customer = (body.customer ?? "").trim().slice(0, 120);
@@ -892,10 +915,8 @@ app.put("/api/orders/:id", async (c) => {
     return c.json({ error: "Nhập tên khách hàng" }, 400);
   }
 
-  const db = getDb(c.env);
-  await ensureSchema(db);
   const existing = await db.execute({
-    sql: `SELECT id, delivery_date, items_json FROM orders WHERE id = ? LIMIT 1`,
+    sql: `SELECT id, delivery_date, delivery_slot, items_json FROM orders WHERE id = ? LIMIT 1`,
     args: [id],
   });
   if (!existing.rows.length) {
@@ -904,6 +925,10 @@ app.put("/api/orders/:id", async (c) => {
   const prevDate = existing.rows[0]?.delivery_date
     ? String(existing.rows[0].delivery_date)
     : "";
+  const prevSlot = existing.rows[0]?.delivery_slot
+    ? String(existing.rows[0].delivery_slot)
+    : "";
+  const delivery_slot = requestedSlot || prevSlot;
   const delivery_date =
     parseDeliveryDate(body.delivery_date, nowMs(), prevDate) ||
     prevDate ||
@@ -934,7 +959,7 @@ app.put("/api/orders/:id", async (c) => {
       customer || null,
       phone || null,
       village,
-      delivery_slot,
+      delivery_slot || null,
       delivery_date,
       id,
     ],
