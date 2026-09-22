@@ -79,10 +79,22 @@ let statsPickTo = "";
 let orderFilter = "pending";
 /** Lọc hôm nay trong tab đã giao */
 let doneTodayFilter = false;
-/** Phân trang tab Đã giao */
+/** Phân trang tab Đã giao — mỗi trang lấy từ server */
 const DONE_PAGE_SIZE = 15;
 let donePage = 1;
 let doneTotalPages = 1;
+/** Tổng đơn đã giao (mọi ngày) — số trên nút, không cần tải hết đơn */
+let doneCount = 0;
+/** Tổng của truy vấn tab Đã giao hiện tại (có thể là chỉ hôm nay) */
+let doneTotal = 0;
+/** Số đơn chưa giao do server đếm; null khi còn đang dùng cache máy */
+let serverOpenCount = null;
+let doneLoadSeq = 0;
+let doneLoading = false;
+/** Kết quả tìm tên; null khi không tìm */
+let searchHits = null;
+let searchSeq = 0;
+let searchTimer = 0;
 /** Chuỗi tìm đơn theo tên khách (đã trim) */
 let orderSearchQuery = "";
 let orderSearchRaf = 0;
@@ -344,7 +356,9 @@ function refreshOrdersIfDayChanged() {
   if (!ordersFetchedDay || ordersFetchedDay === vnDayKey()) return;
   ordersFetchedDay = "";
   loadOrders().catch(() => {});
-  loadDoneOrders().catch(() => {});
+  if (orderFilter === "done" || orderFilter === "all") {
+    loadDoneOrders({ page: 1 }).catch(() => {});
+  }
 }
 
 function showOrdersSkeleton() {
@@ -1251,8 +1265,6 @@ function setProducts(list, { render = true, cache = true } = {}) {
   products = list;
   if (cache) writeProductCache(list);
   if (render) renderMenu();
-  // Order thumbs prefer live catalog images — refresh when products change
-  if (ordersCache.length) renderOrders(ordersCache);
 }
 
 /** Prefer current product catalog image so order thumbs follow avatar updates */
@@ -1317,12 +1329,10 @@ function openVisibleIds() {
 
 function doneVisibleIds() {
   const q = foldVn(orderSearchQuery);
-  let base = doneOrdersCache.filter((o) => normalizeStatus(o.status) === "done");
-  if (doneTodayFilter) base = base.filter(isDeliveredToday);
-  return base
-    .filter((o) => (q ? true : matchesOrderFilter(o.status)))
-    .filter((o) => matchesCustomerSearch(o, q))
-    .map((o) => o.id);
+  const base = q
+    ? (searchHits || []).filter((o) => normalizeStatus(o.status) === "done")
+    : doneOrdersCache.filter((o) => normalizeStatus(o.status) === "done");
+  return base.map((o) => o.id);
 }
 
 /** Thanh bánh tráng / suất theo size */
@@ -1874,13 +1884,9 @@ async function printOrdersAndMarkDone(ids) {
 
 function updateOrderFilterCounts() {
   const openOrders = ordersCache.filter((o) => isOpenStatus(o.status));
-  const open = openOrders.length;
-  const done = doneOrdersCache.length;
-  const openIds = new Set(openOrders.map((o) => o.id));
-  let all = open;
-  for (const o of doneOrdersCache) {
-    if (!openIds.has(o.id)) all += 1;
-  }
+  const open = serverOpenCount == null ? openOrders.length : serverOpenCount;
+  const done = doneCount;
+  const all = open + done;
   let pendingRevenue = 0;
   for (const o of openOrders) {
     pendingRevenue += Number(o.total) || 0;
@@ -1959,21 +1965,40 @@ function findOrder(id) {
   return (
     ordersCache.find((o) => o.id === id) ||
     doneOrdersCache.find((o) => o.id === id) ||
+    (searchHits || []).find((o) => o.id === id) ||
     null
   );
 }
 
-/** Đồng bộ một đơn vào doneOrdersCache theo status hiện tại */
+function adjustOrderCounts({ openDelta = 0, doneDelta = 0 } = {}) {
+  if (serverOpenCount != null) {
+    serverOpenCount = Math.max(0, serverOpenCount + openDelta);
+  }
+  doneCount = Math.max(0, doneCount + doneDelta);
+}
+
+/** Đơn đã giao không nằm trong danh sách trang chủ. Trang đang xem thì cập nhật tại chỗ. */
 function syncDoneOrdersCache(order) {
   if (!order?.id) return;
   if (normalizeStatus(order.status) === "done") {
-    doneOrdersCache = sortDoneOrders([
-      order,
-      ...doneOrdersCache.filter((o) => o.id !== order.id),
-    ]);
-  } else {
-    doneOrdersCache = doneOrdersCache.filter((o) => o.id !== order.id);
+    ordersCache = ordersCache.filter((o) => o.id !== order.id);
+    const showOnPage =
+      (orderFilter === "done" || orderFilter === "all") &&
+      donePage === 1 &&
+      (!doneTodayFilter || isDeliveredToday(order));
+    if (showOnPage) {
+      doneOrdersCache = sortDoneOrders([
+        order,
+        ...doneOrdersCache.filter((o) => o.id !== order.id),
+      ]).slice(0, DONE_PAGE_SIZE);
+    } else {
+      doneOrdersCache = doneOrdersCache.filter((o) => o.id !== order.id);
+    }
+    writeOrdersCache(ordersCache);
+    return;
   }
+  doneOrdersCache = doneOrdersCache.filter((o) => o.id !== order.id);
+  writeOrdersCache(ordersCache);
 }
 
 /** Đưa đơn pending trở lại board upcoming nếu chưa có */
@@ -1983,40 +2008,21 @@ function ensureOrderOnBoard(order) {
   if (idx >= 0) {
     ordersCache[idx] = order;
     ordersCache = sortOrders(ordersCache);
+    writeOrdersCache(ordersCache);
     return;
   }
   if (isOpenStatus(order.status)) {
     ordersCache = sortOrders([...ordersCache, order]);
   }
+  writeOrdersCache(ordersCache);
 }
 
 /** Danh sách hiển thị theo tab lọc + tìm tên khách */
 function boardOrdersForFilter() {
   const q = foldVn(orderSearchQuery);
   // Đang tìm → quét mọi trạng thái: chưa giao trước, đã giao sau
-  if (q) {
-    const open = sortOrders(
-      ordersCache.filter(
-        (o) => isOpenStatus(o.status) && matchesCustomerSearch(o, q),
-      ),
-    );
-    const openIds = new Set(open.map((o) => o.id));
-    const done = sortDoneOrders(
-      doneOrdersCache.filter(
-        (o) => !openIds.has(o.id) && matchesCustomerSearch(o, q),
-      ),
-    );
-    return [...open, ...done];
-  }
-  if (orderFilter === "done") {
-    const base = doneTodayFilter
-      ? doneOrdersCache.filter(isDeliveredToday)
-      : doneOrdersCache;
-    doneTotalPages = Math.max(1, Math.ceil(base.length / DONE_PAGE_SIZE));
-    donePage = Math.min(Math.max(1, donePage), doneTotalPages);
-    const start = (donePage - 1) * DONE_PAGE_SIZE;
-    return base.slice(start, start + DONE_PAGE_SIZE);
-  }
+  if (q) return searchHits || [];
+  if (orderFilter === "done") return doneOrdersCache;
   if (orderFilter === "pending") {
     return ordersCache.filter((o) => isOpenStatus(o.status));
   }
@@ -2025,24 +2031,55 @@ function boardOrdersForFilter() {
   return [...open, ...doneOrdersCache.filter((o) => !openIds.has(o.id))];
 }
 
-/** Cập nhật board upcoming (nếu có list) rồi vẽ lại */
+function orderBoardSig(list) {
+  return (list || [])
+    .map((o) =>
+      [
+        o.id,
+        normalizeStatus(o.status),
+        o.total,
+        o.paid_at || 0,
+        o.delivered_at || 0,
+        o.printed_at || 0,
+        o.customer || "",
+        o.phone || "",
+        o.village || "",
+        o.delivery_date || "",
+        o.note || "",
+        (o.items || [])
+          .map((i) => `${i.id}:${i.qty}:${i.size || ""}:${i.price}`)
+          .join(","),
+      ].join("~"),
+    )
+    .join("|");
+}
+
+/** Cập nhật board upcoming (nếu có list) rồi vẽ lại. Bỏ qua vẽ nếu danh sách không đổi. */
 function renderOrders(orders) {
   const day = vnDayKey();
   if (ordersFetchedDay && ordersFetchedDay !== day) {
     ordersFetchedDay = "";
     loadOrders().catch(() => {});
-    loadDoneOrders().catch(() => {});
+    if (orderFilter === "done" || orderFilter === "all") {
+      loadDoneOrders({ page: 1 }).catch(() => {});
+    }
     return;
   }
   if (orders) {
-    ordersCache = sortOrders(
+    const next = sortOrders(
       orders.map((o) => ({
         ...o,
         status: normalizeStatus(o.status),
       })),
     );
+    const same = orderBoardSig(ordersCache) === orderBoardSig(next);
+    ordersCache = next;
     if (!ordersFetchedDay) ordersFetchedDay = day;
     writeOrdersCache(ordersCache);
+    if (same) {
+      updateOrderFilterCounts();
+      return;
+    }
   }
   paintOrdersBoard();
 }
@@ -2053,7 +2090,15 @@ function paintOrdersBoard() {
 
   const visible = boardOrdersForFilter();
   const hasAny =
-    ordersCache.some((o) => isOpenStatus(o.status)) || doneOrdersCache.length > 0;
+    ordersCache.some((o) => isOpenStatus(o.status)) ||
+    doneCount > 0 ||
+    doneOrdersCache.length > 0;
+
+  if (orderFilter === "done" && doneLoading && !doneOrdersCache.length && !foldVn(orderSearchQuery)) {
+    showOrdersSkeleton();
+    paintDonePager();
+    return;
+  }
 
   if (!hasAny) {
     ordersEl.innerHTML = `<p class="empty">Chưa có đơn cần giao.</p>`;
@@ -2276,11 +2321,7 @@ function paintDonePager() {
   if (!pager) return;
   const searching = Boolean(foldVn(orderSearchQuery));
   const isDoneTab = orderFilter === "done" && !searching;
-  const totalItems = isDoneTab
-    ? doneTodayFilter
-      ? doneOrdersCache.filter(isDeliveredToday).length
-      : doneOrdersCache.length
-    : 0;
+  const totalItems = isDoneTab ? doneTotal : 0;
   const pages = totalItems > 0 ? Math.ceil(totalItems / DONE_PAGE_SIZE) : 0;
   if (isDoneTab) doneTotalPages = Math.max(1, pages);
   const show = pages > 1;
@@ -2346,8 +2387,9 @@ function paintDonePager() {
     btn.addEventListener("click", () => {
       const target = Number(btn.dataset.goto);
       if (target !== cur && target >= 1 && target <= total) {
-        donePage = target;
-        paintOrdersBoard();
+        loadDoneOrders({ page: target })
+          .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+          .catch((err) => toast(err.message || "Không tải được trang"));
       }
     });
   });
@@ -2368,6 +2410,12 @@ async function setOrderStatus(id, status, opts = {}) {
     delivered_at: prev.delivered_at ?? null,
     paid_at: prev.paid_at ?? null,
   };
+  const countSnap = { open: serverOpenCount, done: doneCount };
+  if (isOpenStatus(old) && next === "done") {
+    adjustOrderCounts({ openDelta: -1, doneDelta: 1 });
+  } else if (old === "done" && isOpenStatus(next)) {
+    adjustOrderCounts({ openDelta: 1, doneDelta: -1 });
+  }
   statusBusy.add(id);
   applyLocalTimeline(prev, next, { setPrinted });
   if (next === "done") selectedOrderIds.delete(id);
@@ -2391,6 +2439,9 @@ async function setOrderStatus(id, status, opts = {}) {
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
+    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
+    }
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
@@ -2399,6 +2450,8 @@ async function setOrderStatus(id, status, opts = {}) {
     prev.printed_at = snap.printed_at;
     prev.delivered_at = snap.delivered_at;
     prev.paid_at = snap.paid_at;
+    serverOpenCount = countSnap.open;
+    doneCount = countSnap.done;
     syncDoneOrdersCache(prev);
     ensureOrderOnBoard(prev);
     paintOrdersBoard();
@@ -2431,9 +2484,19 @@ function closeDeleteOrderModal() {
 
 function removeOrdersFromCaches(ids) {
   const drop = new Set(ids);
+  let openDelta = 0;
+  let doneDelta = 0;
+  for (const id of drop) {
+    const order = findOrder(id);
+    if (!order) continue;
+    if (normalizeStatus(order.status) === "done") doneDelta -= 1;
+    else openDelta -= 1;
+  }
+  adjustOrderCounts({ openDelta, doneDelta });
   ordersCache = ordersCache.filter((o) => !drop.has(o.id));
   doneOrdersCache = doneOrdersCache.filter((o) => !drop.has(o.id));
   for (const id of drop) selectedOrderIds.delete(id);
+  writeOrdersCache(ordersCache);
 }
 
 async function deleteOrders(ids) {
@@ -2441,6 +2504,7 @@ async function deleteOrders(ids) {
   if (!unique.length) return;
   const snapshot = ordersCache.slice();
   const doneSnapshot = doneOrdersCache.slice();
+  const countSnap = { open: serverOpenCount, done: doneCount };
   removeOrdersFromCaches(unique);
   paintOrdersBoard();
 
@@ -2455,12 +2519,17 @@ async function deleteOrders(ids) {
     }
     toast(unique.length > 1 ? `Đã xóa ${unique.length} đơn` : "Đã xóa đơn");
     loadProducts().catch(() => {});
+    if (orderFilter === "done" || orderFilter === "all") {
+      loadDoneOrders({ page: donePage }).catch(() => {});
+    }
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
     ordersCache = snapshot;
     doneOrdersCache = doneSnapshot;
+    serverOpenCount = countSnap.open;
+    doneCount = countSnap.done;
     paintOrdersBoard();
     toast(err.message || "Không xóa được");
   }
@@ -2482,6 +2551,9 @@ async function markOrderPaid(id) {
     if (data && "paid_at" in data) order.paid_at = data.paid_at;
     syncDoneOrdersCache(order);
     paintOrdersBoard();
+    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
+    }
     toast("Đã đánh dấu thanh toán");
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
@@ -2510,6 +2582,9 @@ async function unmarkOrderPaid(id) {
     if (data && "paid_at" in data) order.paid_at = data.paid_at;
     syncDoneOrdersCache(order);
     paintOrdersBoard();
+    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
+    }
     toast("Đã hủy đánh dấu thanh toán");
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
@@ -2542,6 +2617,20 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
     delivered_at: o.delivered_at ?? null,
     paid_at: o.paid_at ?? null,
   }));
+  const countSnap = { open: serverOpenCount, done: doneCount };
+  let openDelta = 0;
+  let doneDelta = 0;
+  for (const o of targets) {
+    const old = normalizeStatus(o.status);
+    if (isOpenStatus(old) && next === "done") {
+      openDelta -= 1;
+      doneDelta += 1;
+    } else if (old === "done" && isOpenStatus(next)) {
+      openDelta += 1;
+      doneDelta -= 1;
+    }
+  }
+  adjustOrderCounts({ openDelta, doneDelta });
   for (const o of targets) {
     applyLocalTimeline(o, next, { setPrinted });
     if (next === "done") selectedOrderIds.delete(o.id);
@@ -2581,10 +2670,15 @@ async function setOrdersStatusBulk(ids, status, opts = {}) {
       else if (next === "printed") toast(`Đã in ${targets.length} đơn`);
       else toast("Đã hoàn tác");
     }
+    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
+    }
     if (!$("tab-stats")?.classList.contains("hidden")) {
       loadStats().catch(() => {});
     }
   } catch (err) {
+    serverOpenCount = countSnap.open;
+    doneCount = countSnap.done;
     for (const s of snapshot) {
       const o = findOrder(s.id);
       if (!o) continue;
@@ -2633,6 +2727,9 @@ async function setOrdersPaidBulk(ids, paid, opts = {}) {
         paid,
       }),
     });
+    if ((orderFilter === "done" || orderFilter === "all") && !foldVn(orderSearchQuery)) {
+      loadDoneOrders({ page: donePage, today: doneTodayFilter }).catch(() => {});
+    }
     if (!opts.silent) {
       toast(paid ? `Đã đánh dấu ${targets.length} đơn đã thanh toán` : `Đã hủy thanh toán ${targets.length} đơn`);
     }
@@ -3243,9 +3340,10 @@ async function loadOrders() {
       pre && Array.isArray(pre.orders)
         ? pre
         : await api("/api/orders?range=upcoming");
+    if (typeof data.openCount === "number") serverOpenCount = data.openCount;
+    if (typeof data.doneCount === "number") doneCount = data.doneCount;
     ordersFetchedDay = vnDayKey();
     renderOrders(data.orders || []);
-    // Sold counts = delivery today only (not whole upcoming board)
     if (products.length) renderMenu();
   })().finally(() => {
     ordersLoadPromise = null;
@@ -3253,23 +3351,41 @@ async function loadOrders() {
   return ordersLoadPromise;
 }
 
-/** Mọi đơn đã giao — tab Đã giao (mới giao lên đầu) */
-async function loadDoneOrders() {
-  if (doneOrdersLoadPromise) return doneOrdersLoadPromise;
-  doneOrdersLoadPromise = (async () => {
-    const data = await api("/api/orders?range=done");
+/** Một trang đơn đã giao. Không gọi lúc mở trang chủ. */
+async function loadDoneOrders({ page = 1, today = doneTodayFilter } = {}) {
+  const seq = ++doneLoadSeq;
+  doneLoading = true;
+  const params = new URLSearchParams({
+    range: "done",
+    page: String(page),
+    limit: String(DONE_PAGE_SIZE),
+  });
+  if (today) params.set("delivered", "today");
+  try {
+    const data = await api(`/api/orders?${params}`);
+    if (seq !== doneLoadSeq) return;
     doneOrdersCache = sortDoneOrders(
       (data.orders || []).map((o) => ({
         ...o,
         status: normalizeStatus(o.status),
       })),
     );
-    donePage = 1;
+    donePage = Number(data.page) || page;
+    doneTotal = Number(data.total) || 0;
+    doneTotalPages = Number(data.totalPages) || 1;
+    if (!today) doneCount = doneTotal;
+    doneLoading = false;
+    if (orderFilter === "pending" && !foldVn(orderSearchQuery)) {
+      updateOrderFilterCounts();
+      return;
+    }
     paintOrdersBoard();
-  })().finally(() => {
-    doneOrdersLoadPromise = null;
-  });
-  return doneOrdersLoadPromise;
+  } catch (err) {
+    if (seq !== doneLoadSeq) return;
+    doneLoading = false;
+    if (orderFilter === "done" || orderFilter === "all") paintOrdersBoard();
+    throw err;
+  }
 }
 
 function syncStatsRangeButtons() {
@@ -3581,14 +3697,9 @@ async function enterApp() {
 
   try {
     // Orders first for home; stats prefetch in parallel (SWR paint when opened)
-    await Promise.all([
-      loadOrders(),
-      loadDoneOrders(),
-      loadProducts(),
-      loadStats({ silent: true }).catch(() => {}),
-    ]);
+    await Promise.all([loadOrders(), loadProducts()]);
   } catch {
-    if (!ordersCache.length && !doneOrdersCache.length) {
+    if (!ordersCache.length) {
       ordersEl.innerHTML = `<p class="empty">Không tải được đơn.</p>`;
     }
   }
@@ -3607,9 +3718,13 @@ async function refreshData() {
     if (tab === "stats") {
       await Promise.all([loadProducts(), loadStats()]);
     } else if (tab === "orders") {
-      await Promise.all([loadOrders(), loadDoneOrders(), loadProducts()]);
+      const jobs = [loadOrders(), loadProducts()];
+      if (orderFilter === "done" || orderFilter === "all") {
+        jobs.push(loadDoneOrders({ page: donePage }));
+      }
+      await Promise.all(jobs);
     } else {
-      await Promise.all([loadProducts(), loadOrders(), loadDoneOrders()]);
+      await Promise.all([loadProducts(), loadOrders()]);
     }
     toast("Đã cập nhật");
   } catch (err) {
@@ -3713,7 +3828,15 @@ document.querySelector("#tab-orders .order-filters")?.addEventListener("click", 
 
   // Hiện/ẩn row filter hôm nay
   $("done-filter-row")?.classList.toggle("visible", next === "done");
+  if (next === "pending") {
+    paintOrdersBoard();
+    return;
+  }
+  doneLoading = true;
   paintOrdersBoard();
+  loadDoneOrders({ page: 1, today: next === "done" && doneTodayFilter }).catch((err) =>
+    toast(err.message || "Không tải được đơn đã giao"),
+  );
 });
 
 // Toggle filter hôm nay cho tab đã giao (dùng checkbox)
@@ -3724,22 +3847,28 @@ $("done-today-filter")?.addEventListener("change", () => {
   }
   doneTodayFilter = $("done-today-filter").checked;
   donePage = 1;
+  doneOrdersCache = [];
+  doneTotal = 0;
+  doneLoading = true;
   paintOrdersBoard();
+  loadDoneOrders({ page: 1, today: doneTodayFilter }).catch((err) =>
+    toast(err.message || "Không tải được đơn đã giao"),
+  );
 });
 
 $("done-pager-prev")?.addEventListener("click", () => {
   if (donePage > 1) {
-    donePage--;
-    paintOrdersBoard();
-    ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+    loadDoneOrders({ page: donePage - 1 })
+      .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+      .catch((err) => toast(err.message || "Không tải được trang"));
   }
 });
 
 $("done-pager-next")?.addEventListener("click", () => {
   if (donePage < doneTotalPages) {
-    donePage++;
-    paintOrdersBoard();
-    ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+    loadDoneOrders({ page: donePage + 1 })
+      .then(() => ordersEl?.scrollIntoView({ behavior: "smooth", block: "start" }))
+      .catch((err) => toast(err.message || "Không tải được trang"));
   }
 });
 
@@ -3751,12 +3880,40 @@ function syncOrderSearchClear() {
 }
 
 function scheduleOrderSearchPaint() {
-  if (orderSearchRaf) cancelAnimationFrame(orderSearchRaf);
-  orderSearchRaf = requestAnimationFrame(() => {
-    orderSearchRaf = 0;
-    donePage = 1;
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchTimer = 0;
+    runOrderSearch().catch((err) => toast(err.message || "Không tìm được đơn"));
+  }, 200);
+}
+
+async function runOrderSearch() {
+  const raw = String(orderSearchQuery || "").trim();
+  const seq = ++searchSeq;
+  if (!raw) {
+    searchHits = null;
     paintOrdersBoard();
+    return;
+  }
+  const q = foldVn(raw);
+  const open = sortOrders(
+    ordersCache.filter((o) => isOpenStatus(o.status) && matchesCustomerSearch(o, q)),
+  );
+  const params = new URLSearchParams({
+    range: "done",
+    q: raw,
+    limit: "30",
+    page: "1",
   });
+  if (orderFilter === "done" && doneTodayFilter) params.set("delivered", "today");
+  const data = await api(`/api/orders?${params}`);
+  if (seq !== searchSeq) return;
+  const openIds = new Set(open.map((o) => o.id));
+  const done = (data.orders || [])
+    .map((o) => ({ ...o, status: normalizeStatus(o.status) }))
+    .filter((o) => !openIds.has(o.id));
+  searchHits = [...open, ...done];
+  paintOrdersBoard();
 }
 
 $("order-search")?.addEventListener("input", (e) => {
@@ -3775,6 +3932,8 @@ $("order-search-clear")?.addEventListener("click", () => {
     input.focus();
   }
   syncOrderSearchClear();
+  searchSeq += 1;
+  searchHits = null;
   paintOrdersBoard();
 });
 

@@ -660,12 +660,46 @@ app.get("/api/stats/orders", async (c) => {
   });
 });
 
+function foldVnName(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/đ/g, "d")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function mapOrderRows(rows: readonly object[]) {
+  return rows.map((raw) => {
+    const row = raw as Record<string, unknown>;
+    return {
+    id: String(row.id),
+    items: JSON.parse(String(row.items_json)) as OrderItem[],
+    total: Number(row.total),
+    note: row.note ? String(row.note) : "",
+    customer: row.customer ? String(row.customer) : "",
+    phone: row.phone ? String(row.phone) : "",
+    village: row.village ? String(row.village) : "",
+    delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
+    delivery_date: row.delivery_date ? String(row.delivery_date) : "",
+    status: parseOrderStatus(row.status),
+    printed_at: parseTs(row.printed_at),
+    delivered_at: parseTs(row.delivered_at),
+    paid_at: parseTs(row.paid_at),
+    created_at: Number(row.created_at),
+  };
+  });
+}
+
+const ORDER_LIST_SQL = `id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at`;
+
 app.get("/api/orders", async (c) => {
   const db = getDb(c.env);
   await ensureSchema(db);
   const rangeKey = parseDateRangeKey(c.req.query("range"));
-  // `upcoming` = home board by delivery day (yesterday → last picker day).
-  // `done` = mọi đơn đã giao (mới giao trước).
+  // `upcoming` = đơn chưa giao trên trang chủ (hôm qua → ngày giao cuối).
+  // `done` = đơn đã giao, phân trang. `q` tìm theo tên khách.
   // today/yesterday/7d/30d = by created_at (legacy list; stats uses /api/stats).
   const limit =
     rangeKey === "today" ||
@@ -674,49 +708,170 @@ app.get("/api/orders", async (c) => {
       ? 200
       : 2000;
 
-  let result;
   if (rangeKey === "done") {
-    result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at
-            FROM orders
-            WHERE status = 'done'
-            ORDER BY COALESCE(delivered_at, printed_at, created_at) DESC
-            LIMIT ?`,
-      args: [limit],
+    const page = Math.max(1, Math.floor(Number(c.req.query("page")) || 1));
+    const pageLimit = Math.min(
+      50,
+      Math.max(1, Math.floor(Number(c.req.query("limit")) || 15)),
+    );
+    const todayOnly = c.req.query("delivered") === "today";
+    const qFold = foldVnName(String(c.req.query("q") || "").slice(0, 80));
+    const { start, end } = todayRangeVn();
+    const todaySql = todayOnly
+      ? ` AND delivered_at >= ? AND delivered_at < ?`
+      : "";
+    const todayArgs = todayOnly ? [start, end] : [];
+
+    if (qFold) {
+      const meta = await db.execute({
+        sql: `SELECT id, customer, paid_at, delivered_at, printed_at, created_at
+              FROM orders
+              WHERE status = 'done'${todaySql}`,
+        args: todayArgs,
+      });
+      const matched = meta.rows
+        .filter((row) => foldVnName(String(row.customer || "")).includes(qFold))
+        .map((row) => ({
+          id: String(row.id),
+          paid_at: parseTs(row.paid_at),
+          delivered_at: parseTs(row.delivered_at),
+          printed_at: parseTs(row.printed_at),
+          created_at: Number(row.created_at) || 0,
+        }))
+        .sort((a, b) => {
+          const aPaid = a.paid_at ? 1 : 0;
+          const bPaid = b.paid_at ? 1 : 0;
+          if (aPaid !== bPaid) return aPaid - bPaid;
+          const ta = a.delivered_at || a.printed_at || a.created_at;
+          const tb = b.delivered_at || b.printed_at || b.created_at;
+          return tb - ta;
+        });
+      const total = matched.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageLimit));
+      const safePage = Math.min(page, totalPages);
+      const pageIds = matched
+        .slice((safePage - 1) * pageLimit, safePage * pageLimit)
+        .map((row) => row.id);
+      let orders: ReturnType<typeof mapOrderRows> = [];
+      if (pageIds.length) {
+        const full = await db.execute({
+          sql: `SELECT ${ORDER_LIST_SQL} FROM orders WHERE id IN (${pageIds.map(() => "?").join(",")})`,
+          args: pageIds,
+        });
+        const byId = new Map(
+          mapOrderRows(full.rows as readonly object[]).map((order) => [order.id, order]),
+        );
+        orders = pageIds.flatMap((id) => {
+          const order = byId.get(id);
+          return order ? [order] : [];
+        });
+      }
+      return c.json({
+        orders,
+        range: rangeKey,
+        tz: "Asia/Ho_Chi_Minh",
+        page: safePage,
+        limit: pageLimit,
+        total,
+        totalPages,
+      });
+    }
+
+    const where = `status = 'done'${todaySql}`;
+    const [countRes, listRes] = await Promise.all([
+      db.execute({
+        sql: `SELECT COUNT(*) AS cnt FROM orders WHERE ${where}`,
+        args: todayArgs,
+      }),
+      db.execute({
+        sql: `SELECT ${ORDER_LIST_SQL}
+              FROM orders
+              WHERE ${where}
+              ORDER BY CASE WHEN paid_at IS NOT NULL AND paid_at > 0 THEN 1 ELSE 0 END ASC,
+                       COALESCE(delivered_at, printed_at, created_at) DESC
+              LIMIT ? OFFSET ?`,
+        args: [...todayArgs, pageLimit, (page - 1) * pageLimit],
+      }),
+    ]);
+    const total = Number(countRes.rows[0]?.cnt || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageLimit));
+    const safePage = Math.min(page, totalPages);
+    let orders = mapOrderRows(listRes.rows as readonly object[]);
+    if (safePage !== page) {
+      const retry = await db.execute({
+        sql: `SELECT ${ORDER_LIST_SQL}
+              FROM orders
+              WHERE ${where}
+              ORDER BY CASE WHEN paid_at IS NOT NULL AND paid_at > 0 THEN 1 ELSE 0 END ASC,
+                       COALESCE(delivered_at, printed_at, created_at) DESC
+              LIMIT ? OFFSET ?`,
+        args: [...todayArgs, pageLimit, (safePage - 1) * pageLimit],
+      });
+      orders = mapOrderRows(retry.rows as readonly object[]);
+    }
+    return c.json({
+      orders,
+      range: rangeKey,
+      tz: "Asia/Ho_Chi_Minh",
+      page: safePage,
+      limit: pageLimit,
+      total,
+      totalPages,
     });
-  } else if (rangeKey === "upcoming") {
+  }
+
+  let result;
+  let openCount: number | null = null;
+  let doneCount: number | null = null;
+  if (rangeKey === "upcoming") {
     const { startYmd, endYmdExclusive } = upcomingDeliveryYmdRange();
     const { start: createdStart, end: createdEnd } = todayRangeVn();
-    result = await db.execute({
-      sql: `SELECT id, items_json, total, note, customer, phone, village, delivery_slot, delivery_date, status, printed_at, delivered_at, paid_at, created_at
-            FROM orders
-            WHERE
-              (delivery_date >= ? AND delivery_date < ?)
-              OR (
-                (delivery_date IS NULL OR delivery_date = '')
-                AND created_at >= ? AND created_at < ?
-              )
-            ORDER BY
-              CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
-              delivery_date ASC,
-              CASE village
-                WHEN 'Đông Cao' THEN 0
-                WHEN 'Tráng Việt' THEN 1
-                WHEN 'Văn Quán' THEN 2
-                WHEN 'Văn Khê' THEN 3
-                WHEN 'Hạ Lôi' THEN 4
-                WHEN 'Tiền Phong' THEN 5
-                ELSE 9
-              END ASC,
-              CASE delivery_slot
-                WHEN 'trua' THEN 0
-                WHEN 'chieu' THEN 1
-                ELSE 2
-              END ASC,
-              created_at ASC
-            LIMIT ?`,
-      args: [startYmd, endYmdExclusive, createdStart, createdEnd, limit],
-    });
+    const windowSql = `
+      (
+        (delivery_date >= ? AND delivery_date < ?)
+        OR (
+          (delivery_date IS NULL OR delivery_date = '')
+          AND created_at >= ? AND created_at < ?
+        )
+      )
+      AND (status IS NULL OR status = '' OR status = 'pending' OR status = 'printed')
+    `;
+    const windowArgs = [startYmd, endYmdExclusive, createdStart, createdEnd];
+    const [listRes, openRes, doneRes] = await Promise.all([
+      db.execute({
+        sql: `SELECT ${ORDER_LIST_SQL}
+              FROM orders
+              WHERE ${windowSql}
+              ORDER BY
+                CASE WHEN delivery_date IS NULL OR delivery_date = '' THEN 1 ELSE 0 END ASC,
+                delivery_date ASC,
+                CASE village
+                  WHEN 'Đông Cao' THEN 0
+                  WHEN 'Tráng Việt' THEN 1
+                  WHEN 'Văn Quán' THEN 2
+                  WHEN 'Văn Khê' THEN 3
+                  WHEN 'Hạ Lôi' THEN 4
+                  WHEN 'Tiền Phong' THEN 5
+                  ELSE 9
+                END ASC,
+                CASE delivery_slot
+                  WHEN 'trua' THEN 0
+                  WHEN 'chieu' THEN 1
+                  ELSE 2
+                END ASC,
+                created_at ASC
+              LIMIT ?`,
+        args: [...windowArgs, limit],
+      }),
+      db.execute({
+        sql: `SELECT COUNT(*) AS cnt FROM orders WHERE ${windowSql}`,
+        args: windowArgs,
+      }),
+      db.execute(`SELECT COUNT(*) AS cnt FROM orders WHERE status = 'done'`),
+    ]);
+    result = listRes;
+    openCount = Number(openRes.rows[0]?.cnt || 0);
+    doneCount = Number(doneRes.rows[0]?.cnt || 0);
   } else {
     const { start, end } = rangeVn(rangeKey);
     result = await db.execute({
@@ -737,27 +892,13 @@ app.get("/api/orders", async (c) => {
     });
   }
 
-  const orders = result.rows.map((row) => ({
-    id: String(row.id),
-    items: JSON.parse(String(row.items_json)) as OrderItem[],
-    total: Number(row.total),
-    note: row.note ? String(row.note) : "",
-    customer: row.customer ? String(row.customer) : "",
-    phone: row.phone ? String(row.phone) : "",
-    village: row.village ? String(row.village) : "",
-    delivery_slot: row.delivery_slot ? String(row.delivery_slot) : "",
-    delivery_date: row.delivery_date ? String(row.delivery_date) : "",
-    status: parseOrderStatus(row.status),
-    printed_at: parseTs(row.printed_at),
-    delivered_at: parseTs(row.delivered_at),
-    paid_at: parseTs(row.paid_at),
-    created_at: Number(row.created_at),
-  }));
+  const orders = mapOrderRows(result.rows as readonly object[]);
 
   return c.json({
     orders,
     range: rangeKey,
     tz: "Asia/Ho_Chi_Minh",
+    ...(openCount != null ? { openCount, doneCount } : {}),
   });
 });
 
