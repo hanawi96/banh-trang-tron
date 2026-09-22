@@ -2155,6 +2155,8 @@ function emptyOrdersHtml(message) {
 function paintOrdersBoard() {
   updateOrderFilterCounts();
   ordersEl?.removeAttribute("aria-busy");
+  $("tab-orders")?.classList.toggle("is-done-view", orderFilter === "done");
+  syncDoneToTop();
 
   const visible = boardOrdersForFilter();
   const hasAny =
@@ -2256,7 +2258,7 @@ function paintOrdersBoard() {
         return `<div class="order-item-row">
           ${thumb}
           <div class="order-item-block">
-            <p class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(i.name)}</span>${
+            <p class="order-line"><span class="order-qty">${i.qty}×</span> <span class="order-name">${escapeHtml(orderFilter === "done" ? displayProductName(i.name) : i.name)}</span>${
               sizeText ? `<span class="order-size">${escapeHtml(sizeText)}</span>` : ""
             }</p>
             ${
@@ -3423,6 +3425,23 @@ async function loadOrders() {
   return ordersLoadPromise;
 }
 
+let doneToTopRaf = 0;
+
+function syncDoneToTop() {
+  const btn = $("done-to-top");
+  if (!btn) return;
+  const show = window.scrollY > 320;
+  btn.classList.toggle("is-on", show);
+}
+
+function queueDoneToTop() {
+  if (doneToTopRaf) return;
+  doneToTopRaf = requestAnimationFrame(() => {
+    doneToTopRaf = 0;
+    syncDoneToTop();
+  });
+}
+
 /** Đưa đơn đầu của trang vừa mở lên ngay dưới thanh lọc, không cuộn cả khung danh sách. */
 function scrollToFirstDoneOrder() {
   requestAnimationFrame(() => {
@@ -3943,6 +3962,13 @@ $("done-today-filter")?.addEventListener("change", () => {
     toast(err.message || "Không tải được đơn đã giao"),
   );
 });
+
+$("done-to-top")?.addEventListener("click", () => {
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+});
+
+window.addEventListener("scroll", queueDoneToTop, { passive: true });
 
 $("done-pager-prev")?.addEventListener("click", () => {
   if (donePage > 1) {
