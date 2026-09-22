@@ -4549,6 +4549,45 @@ $("customer-name")?.addEventListener("input", () => {
   $("customer-name")?.closest(".field")?.classList.remove("is-invalid");
 });
 
+function showCreatedOrder(order) {
+  orderFilter = "pending";
+  orderSearchQuery = "";
+  searchHits = null;
+  const search = $("order-search");
+  if (search instanceof HTMLInputElement) search.value = "";
+  syncOrderSearchClear();
+  $("done-filter-row")?.classList.remove("visible");
+  const next = {
+    ...order,
+    status: "pending",
+    items: Array.isArray(order.items) ? order.items : [],
+    note: order.note || "",
+    customer: order.customer || "",
+    phone: order.phone || "",
+    village: order.village || "",
+    delivery_slot: order.delivery_slot || "",
+    delivery_date: order.delivery_date || "",
+    printed_at: null,
+    delivered_at: null,
+    paid_at: null,
+  };
+  ordersCache = sortOrders([
+    next,
+    ...ordersCache.filter((row) => row.id !== next.id),
+  ]);
+  if (serverOpenCount != null) serverOpenCount += 1;
+  for (const line of next.items) {
+    const product = products.find((row) => row.id === line.id);
+    if (!product) continue;
+    product.sold_count =
+      Math.max(0, Number(product.sold_count) || 0) + (Number(line.qty) || 0);
+  }
+  writeProductCache(products);
+  paintOrdersBoard();
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+}
+
 $("order-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const nameEl = $("customer-name");
@@ -4588,7 +4627,7 @@ $("order-form").addEventListener("submit", async (e) => {
   saveBtn.classList.add("is-busy");
   if (label) label.textContent = "Đang tạo...";
   try {
-    await api("/api/orders", {
+    const data = await api("/api/orders", {
       method: "POST",
       body: JSON.stringify({
         items,
@@ -4602,8 +4641,9 @@ $("order-form").addEventListener("submit", async (e) => {
     cart = [];
     clearComposeInvalid(orderModal);
     closeOrderModal();
+    if (data?.order?.id) showCreatedOrder(data.order);
+    else await refreshOrdersView();
     toast("Đã tạo đơn");
-    await Promise.all([refreshOrdersView(), loadProducts()]);
   } catch (err) {
     toast(err.message || "Không tạo được đơn");
   } finally {

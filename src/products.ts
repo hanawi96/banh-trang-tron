@@ -44,16 +44,18 @@ export async function applySoldDeltas(
 ): Promise<void> {
   if (!deltas.size) return;
   await ensureProducts(db);
+  const stmts: { sql: string; args: (string | number)[] }[] = [];
   for (const [id, delta] of deltas) {
     const n = Math.trunc(Number(delta)) || 0;
     if (!id || !n) continue;
-    await db.execute({
+    stmts.push({
       sql: `UPDATE products
             SET sold_count = MAX(0, COALESCE(sold_count, 0) + ?)
             WHERE id = ?`,
       args: [n, id],
     });
   }
+  if (stmts.length) await db.batch(stmts, "write");
 }
 
 const SEED: Omit<Product, "updated_at" | "sold_count">[] = [
@@ -311,8 +313,12 @@ export async function stampItemCategories<T extends { id: string; category?: str
   db: Client,
   items: T[],
 ): Promise<(T & { category: ProductCategory })[]> {
-  await ensureProducts(db);
   if (!items.length) return [];
+  const known = items.every(
+    (item) => item.category === "tra-sua" || item.category === "banh-trang",
+  );
+  if (known) return items as (T & { category: ProductCategory })[];
+  await ensureProducts(db);
   const ids = [...new Set(items.map((item) => item.id).filter(Boolean))];
   const map = new Map<string, ProductCategory>();
   if (ids.length) {
