@@ -3699,8 +3699,13 @@ body.bulk-open .to-top {
 }
 
 .modal-sheet.modal-sheet-order .modal-head {
+  align-items: center;
   padding-left: 16px;
   padding-right: 16px;
+}
+
+.modal-sheet.modal-sheet-order .modal-head h2 {
+  margin: 0;
 }
 
 .modal-grab {

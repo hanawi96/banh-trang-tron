@@ -24,7 +24,6 @@ const saveProductBtn = $("save-product");
 const confirmDeleteBtn = $("confirm-delete");
 const editPreview = $("edit-preview");
 const editImageInput = $("edit-image");
-const editOrderMeta = $("edit-order-meta");
 const orderMenuEl = $("order-menu");
 const orderCartLinesEl = $("order-cart-lines");
 const editOrderMenuEl = $("edit-order-menu");
@@ -949,8 +948,8 @@ function buildProductCard(p, { manage, sold = 0 }) {
 }
 
 const CATEGORY_GROUPS = [
-  { id: "banh-trang", label: "Bánh tráng" },
   { id: "tra-sua", label: "Trà sữa" },
+  { id: "banh-trang", label: "Bánh tráng" },
 ];
 
 function productCategory(product) {
@@ -1065,13 +1064,7 @@ function renderLineRow(line, { prefix, sizeToggle = false }) {
 }
 
 function updateComposeMeta() {
-  const { parts, total, lines } = cartTotals();
-  const meta = $("modal-meta");
-  if (meta) {
-    meta.textContent = lines
-      ? `${lines} món · ${parts} phần · ${formatVnd(total)}`
-      : "Chưa có món";
-  }
+  const { total, lines } = cartTotals();
   $("cart-clear")?.classList.toggle("hidden", !lines);
   const label = saveBtn?.querySelector(".btn-label");
   if (label && !saveBtn.classList.contains("is-busy")) {
@@ -2932,12 +2925,7 @@ function renderDeliveryDateOptions(rootId, inputName, selectedYmd, extraYmd) {
 }
 
 function refreshEditOrderMeta() {
-  const { parts, total, lines } = cartTotals(editOrderItems);
-  if (editOrderMeta) {
-    editOrderMeta.textContent = lines
-      ? `${lines} món · ${parts} phần · ${formatVnd(total)}`
-      : "Chưa có món";
-  }
+  const { total, lines } = cartTotals(editOrderItems);
   const label = saveEditOrderBtn?.querySelector(".btn-label");
   if (label && !saveEditOrderBtn.classList.contains("is-busy")) {
     if (cloningOrder) {
@@ -2975,8 +2963,6 @@ function openEditOrderModal(order, { clone = false } = {}) {
           : productCategory(catalog),
     };
   });
-  const kicker = $("edit-order-kicker");
-  if (kicker) kicker.textContent = clone ? "Nhân bản" : "Sửa đơn";
   $("edit-order-title").textContent = clone ? "Nhân bản đơn hàng" : "Sửa đơn hàng";
   $("edit-order-customer").value = formatCustomerName(order.customer);
   syncOptionalFields("edit", {
